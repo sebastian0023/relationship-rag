@@ -38,3 +38,17 @@ jobs:
           --context stage=dev >/dev/null &&
           npx cdk deploy --app 'node apps/infrastructure/dist/bin/app.js'
           --context stage=dev --all --require-approval never
+      - name: Publish frontend and runtime configuration
+        env:
+          AWS_PAGER: ''
+        run: |
+          api_origin=$(aws cloudformation describe-stacks --stack-name relationship-rag-dev-api --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue | [0]" --output text)
+          authority=$(aws cloudformation describe-stacks --stack-name relationship-rag-dev-auth --query "Stacks[0].Outputs[?OutputKey=='UserPoolIssuer'].OutputValue | [0]" --output text)
+          client_id=$(aws cloudformation describe-stacks --stack-name relationship-rag-dev-auth --query "Stacks[0].Outputs[?OutputKey=='UserPoolClientId'].OutputValue | [0]" --output text)
+          frontend_bucket=$(aws cloudformation describe-stacks --stack-name relationship-rag-dev-edge --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue | [0]" --output text)
+          distribution_id=$(aws cloudformation describe-stacks --stack-name relationship-rag-dev-edge --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue | [0]" --output text)
+          API_ORIGIN="$api_origin" AUTHORITY="$authority" CLIENT_ID="$client_id" \
+            node -e "const fs = require('node:fs'); fs.writeFileSync('apps/web/dist/relationship-rag-web/browser/assets/runtime-config.json', JSON.stringify({ apiOrigin: process.env.API_ORIGIN, authority: process.env.AUTHORITY, clientId: process.env.CLIENT_ID, scope: 'openid profile email relationship-rag/access' }));"
+          aws s3 sync apps/web/dist/relationship-rag-web/browser "s3://$frontend_bucket" --delete --exclude index.html --cache-control 'public, max-age=31536000, immutable'
+          aws s3 cp apps/web/dist/relationship-rag-web/browser/index.html "s3://$frontend_bucket/index.html" --cache-control 'no-cache, no-store, must-revalidate'
+          aws cloudfront create-invalidation --distribution-id "$distribution_id" --paths / /index.html /assets/runtime-config.json

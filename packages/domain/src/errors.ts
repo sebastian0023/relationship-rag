@@ -14,3 +14,17 @@ export class ResourceNotFoundError extends DomainError {
     this.name = 'ResourceNotFoundError';
   }
 }
+
+export class AuthorizationError extends DomainError {
+  public constructor() {
+    super('FORBIDDEN', 'You are not authorized to access this resource.');
+    this.name = 'AuthorizationError';
+  }
+}
+
+export class ConflictError extends DomainError {
+  public constructor() {
+    super('CONFLICT', 'This memory has changed. Reload it and try again.');
+    this.name = 'ConflictError';
+  }
+}

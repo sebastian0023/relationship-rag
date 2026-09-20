@@ -6,13 +6,25 @@ import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
+import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
+import * as logs from 'aws-cdk-lib/aws-logs';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
+import { resolve } from 'node:path';
 import type { Construct } from 'constructs';
 import type { StageConfig } from './config.js';
 
 interface RelationshipStackProps extends cdk.StackProps {
   readonly config: StageConfig;
+  readonly frontendDomain?: string;
+}
+
+interface AuthStackProps extends RelationshipStackProps {
+  readonly frontendDomain: string;
 }
 
 const removalPolicyFor = (config: StageConfig): cdk.RemovalPolicy =>
@@ -22,6 +34,8 @@ export class DataStack extends cdk.Stack {
   public readonly applicationTable: dynamodb.Table;
   public readonly mediaBucket: s3.Bucket;
   public readonly ragSourceBucket: s3.Bucket;
+  public readonly mediaProcessingQueue: sqs.Queue;
+  public readonly mediaProcessingDlq: sqs.Queue;
 
   public constructor(scope: Construct, id: string, props: RelationshipStackProps) {
     super(scope, id, props);
@@ -38,6 +52,54 @@ export class DataStack extends cdk.Stack {
     });
 
     this.mediaBucket = this.privateBucket('MediaBucket', props.config, removalPolicy);
+    this.mediaBucket.addCorsRule({
+      allowedMethods: [s3.HttpMethods.POST],
+      allowedOrigins: [
+        ...(props.frontendDomain === undefined ? [] : [`https://${props.frontendDomain}`]),
+        ...(props.config.stage === 'dev' ? ['http://localhost:4200'] : []),
+      ],
+      allowedHeaders: ['content-type'],
+      maxAge: 300,
+    });
+    this.mediaBucket.addLifecycleRule({
+      prefix: 'staging/',
+      expiration: cdk.Duration.days(1),
+      abortIncompleteMultipartUploadAfter: cdk.Duration.days(1),
+    });
+    this.mediaProcessingDlq = new sqs.Queue(this, 'MediaProcessingDeadLetterQueue', {
+      encryption: sqs.QueueEncryption.SQS_MANAGED,
+      retentionPeriod: cdk.Duration.days(14),
+      removalPolicy,
+    });
+    this.mediaProcessingQueue = new sqs.Queue(this, 'MediaProcessingQueue', {
+      encryption: sqs.QueueEncryption.SQS_MANAGED,
+      visibilityTimeout: cdk.Duration.minutes(2),
+      deadLetterQueue: { queue: this.mediaProcessingDlq, maxReceiveCount: 5 },
+      removalPolicy,
+    });
+    this.mediaBucket.addEventNotification(
+      s3.EventType.OBJECT_CREATED,
+      new s3n.SqsDestination(this.mediaProcessingQueue),
+      { prefix: 'staging/' },
+    );
+    const photoProcessor = new lambdaNodejs.NodejsFunction(this, 'PhotoProcessorFunction', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      entry: resolve(process.cwd(), 'services/memories/src/handlers/process-photo.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.minutes(2),
+      memorySize: 1024,
+      tracing: lambda.Tracing.ACTIVE,
+      environment: {
+        APPLICATION_TABLE_NAME: this.applicationTable.tableName,
+        MEDIA_BUCKET_NAME: this.mediaBucket.bucketName,
+      },
+      bundling: { minify: true, sourceMap: true, nodeModules: ['sharp'] },
+    });
+    photoProcessor.addEventSource(
+      new lambdaEventSources.SqsEventSource(this.mediaProcessingQueue, { batchSize: 1 }),
+    );
+    this.applicationTable.grantReadWriteData(photoProcessor);
+    this.mediaBucket.grantReadWrite(photoProcessor);
     this.ragSourceBucket = this.privateBucket('RagSourceBucket', props.config, removalPolicy);
 
     new cdk.CfnOutput(this, 'ApplicationTableName', { value: this.applicationTable.tableName });
@@ -62,10 +124,14 @@ export class DataStack extends cdk.Stack {
 }
 
 export class AuthStack extends cdk.Stack {
-  public constructor(scope: Construct, id: string, props: RelationshipStackProps) {
+  public readonly userPool: cognito.UserPool;
+  public readonly userPoolClient: cognito.UserPoolClient;
+  public readonly issuer: string;
+
+  public constructor(scope: Construct, id: string, props: AuthStackProps) {
     super(scope, id, props);
 
-    const userPool = new cognito.UserPool(this, 'UserPool', {
+    this.userPool = new cognito.UserPool(this, 'UserPool', {
       selfSignUpEnabled: false,
       signInAliases: { email: true },
       autoVerify: { email: true },
@@ -81,44 +147,91 @@ export class AuthStack extends cdk.Stack {
       },
     });
 
-    const client = userPool.addClient('WebClient', {
-      authFlows: { userSrp: true },
+    const apiAccessScope = new cognito.ResourceServerScope({
+      scopeName: 'access',
+      scopeDescription: 'Access the Relationship RAG API.',
+    });
+    const resourceServer = this.userPool.addResourceServer('RelationshipRagApi', {
+      identifier: 'relationship-rag',
+      scopes: [apiAccessScope],
+    });
+    this.userPoolClient = this.userPool.addClient('WebClient', {
       generateSecret: false,
       preventUserExistenceErrors: true,
+      oAuth: {
+        flows: { authorizationCodeGrant: true },
+        scopes: [
+          cognito.OAuthScope.OPENID,
+          cognito.OAuthScope.PROFILE,
+          cognito.OAuthScope.EMAIL,
+          cognito.OAuthScope.resourceServer(resourceServer, apiAccessScope),
+        ],
+        callbackUrls: [`https://${props.frontendDomain}/auth/callback`],
+        logoutUrls: [`https://${props.frontendDomain}/`],
+      },
+      accessTokenValidity: cdk.Duration.minutes(15),
+      idTokenValidity: cdk.Duration.minutes(15),
+      refreshTokenValidity: cdk.Duration.days(1),
+    });
+    this.userPool.addDomain('ManagedLoginDomain', {
+      cognitoDomain: {
+        domainPrefix: `relationship-rag-${props.config.stage}-${cdk.Aws.ACCOUNT_ID}`,
+      },
     });
 
     new cognito.CfnUserPoolGroup(this, 'OwnerGroup', {
-      userPoolId: userPool.userPoolId,
+      userPoolId: this.userPool.userPoolId,
       groupName: 'OWNER',
       precedence: 0,
     });
     new cognito.CfnUserPoolGroup(this, 'PartnerGroup', {
-      userPoolId: userPool.userPoolId,
+      userPoolId: this.userPool.userPoolId,
       groupName: 'PARTNER',
       precedence: 1,
     });
 
-    new cdk.CfnOutput(this, 'UserPoolId', { value: userPool.userPoolId });
-    new cdk.CfnOutput(this, 'UserPoolClientId', { value: client.userPoolClientId });
+    this.issuer = this.userPool.userPoolProviderUrl;
+    new cdk.CfnOutput(this, 'UserPoolId', { value: this.userPool.userPoolId });
+    new cdk.CfnOutput(this, 'UserPoolClientId', { value: this.userPoolClient.userPoolClientId });
+    new cdk.CfnOutput(this, 'UserPoolIssuer', { value: this.issuer });
   }
 }
 
 export class EdgeStack extends cdk.Stack {
+  public readonly frontendBucket: s3.Bucket;
+  public readonly distribution: cloudfront.Distribution;
+
   public constructor(scope: Construct, id: string, props: RelationshipStackProps) {
     super(scope, id, props);
 
-    const frontendBucket = new s3.Bucket(this, 'FrontendBucket', {
+    this.frontendBucket = new s3.Bucket(this, 'FrontendBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
       autoDeleteObjects: !props.config.retainData,
       removalPolicy: removalPolicyFor(props.config),
     });
-    const distribution = new cloudfront.Distribution(this, 'Distribution', {
+    const securityHeaders = new cloudfront.ResponseHeadersPolicy(this, 'SecurityHeaders', {
+      securityHeadersBehavior: {
+        contentTypeOptions: { override: true },
+        frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: true },
+        referrerPolicy: {
+          referrerPolicy: cloudfront.HeadersReferrerPolicy.SAME_ORIGIN,
+          override: true,
+        },
+        strictTransportSecurity: {
+          accessControlMaxAge: cdk.Duration.days(365),
+          includeSubdomains: true,
+          override: true,
+        },
+      },
+    });
+    this.distribution = new cloudfront.Distribution(this, 'Distribution', {
       defaultBehavior: {
-        origin: origins.S3BucketOrigin.withOriginAccessControl(frontendBucket),
+        origin: origins.S3BucketOrigin.withOriginAccessControl(this.frontendBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         compress: true,
+        responseHeadersPolicy: securityHeaders,
       },
       defaultRootObject: 'index.html',
       errorResponses: [
@@ -128,8 +241,9 @@ export class EdgeStack extends cdk.Stack {
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
     });
 
-    new cdk.CfnOutput(this, 'FrontendBucketName', { value: frontendBucket.bucketName });
-    new cdk.CfnOutput(this, 'DistributionDomainName', { value: distribution.domainName });
+    new cdk.CfnOutput(this, 'FrontendBucketName', { value: this.frontendBucket.bucketName });
+    new cdk.CfnOutput(this, 'DistributionDomainName', { value: this.distribution.domainName });
+    new cdk.CfnOutput(this, 'DistributionId', { value: this.distribution.distributionId });
   }
 }
 
@@ -147,8 +261,17 @@ export class AiStack extends cdk.Stack {
   }
 }
 
+interface ApiStackProps extends RelationshipStackProps {
+  readonly applicationTable: dynamodb.ITable;
+  readonly userPool: cognito.IUserPool;
+  readonly userPoolClient: cognito.IUserPoolClient;
+  readonly issuer: string;
+  readonly frontendDomain: string;
+  readonly mediaBucket: s3.IBucket;
+}
+
 export class ApiStack extends cdk.Stack {
-  public constructor(scope: Construct, id: string, props: RelationshipStackProps) {
+  public constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
     const api = new apigatewayv2.CfnApi(this, 'HttpApi', {
@@ -156,9 +279,118 @@ export class ApiStack extends cdk.Stack {
       protocolType: 'HTTP',
       corsConfiguration: {
         allowHeaders: ['authorization', 'content-type', 'x-correlation-id'],
-        allowMethods: ['GET', 'POST', 'PATCH', 'OPTIONS'],
-        allowOrigins: props.config.stage === 'prod' ? [] : ['http://localhost:4200'],
+        allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+        allowOrigins:
+          props.config.stage === 'dev'
+            ? [`https://${props.frontendDomain}`, 'http://localhost:4200']
+            : [`https://${props.frontendDomain}`],
       },
+    });
+    const authorizer = new apigatewayv2.CfnAuthorizer(this, 'JwtAuthorizer', {
+      apiId: api.ref,
+      authorizerType: 'JWT',
+      identitySource: ['$request.header.Authorization'],
+      jwtConfiguration: {
+        audience: [props.userPoolClient.userPoolClientId],
+        issuer: props.issuer,
+      },
+      name: 'cognito-jwt',
+    });
+    const getMeLogGroup = new logs.LogGroup(this, 'GetMeLogGroup', {
+      retention: props.config.retainData
+        ? logs.RetentionDays.THREE_MONTHS
+        : logs.RetentionDays.ONE_MONTH,
+      removalPolicy: removalPolicyFor(props.config),
+    });
+    const getMeFunction = new lambdaNodejs.NodejsFunction(this, 'GetMeFunction', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      entry: resolve(process.cwd(), 'services/identity/src/handlers/get-me.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 256,
+      tracing: lambda.Tracing.ACTIVE,
+      environment: {
+        APPLICATION_TABLE_NAME: props.applicationTable.tableName,
+        COUPLE_ID: props.config.coupleId,
+      },
+      logGroup: getMeLogGroup,
+      bundling: { minify: true, sourceMap: true },
+    });
+    props.applicationTable.grantReadData(getMeFunction);
+    const getMeIntegration = new apigatewayv2.CfnIntegration(this, 'GetMeIntegration', {
+      apiId: api.ref,
+      integrationType: 'AWS_PROXY',
+      integrationUri: getMeFunction.functionArn,
+      payloadFormatVersion: '2.0',
+    });
+    getMeFunction.addPermission('ApiGatewayGetMeInvocation', {
+      principal: new iam.ServicePrincipal('apigateway.amazonaws.com'),
+      sourceArn: cdk.Stack.of(this).formatArn({
+        service: 'execute-api',
+        resource: `${api.ref}/*/GET/me`,
+      }),
+    });
+    new apigatewayv2.CfnRoute(this, 'GetMeRoute', {
+      apiId: api.ref,
+      routeKey: 'GET /me',
+      authorizationType: 'JWT',
+      authorizerId: authorizer.ref,
+      authorizationScopes: ['relationship-rag/access'],
+      target: `integrations/${getMeIntegration.ref}`,
+    });
+    const memoriesLogGroup = new logs.LogGroup(this, 'MemoriesLogGroup', {
+      retention: props.config.retainData
+        ? logs.RetentionDays.THREE_MONTHS
+        : logs.RetentionDays.ONE_MONTH,
+      removalPolicy: removalPolicyFor(props.config),
+    });
+    const memoriesFunction = new lambdaNodejs.NodejsFunction(this, 'MemoriesFunction', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      entry: resolve(process.cwd(), 'services/memories/src/handlers/memories.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(15),
+      memorySize: 512,
+      tracing: lambda.Tracing.ACTIVE,
+      environment: {
+        APPLICATION_TABLE_NAME: props.applicationTable.tableName,
+        COUPLE_ID: props.config.coupleId,
+        MEDIA_BUCKET_NAME: props.mediaBucket.bucketName,
+      },
+      logGroup: memoriesLogGroup,
+      bundling: { minify: true, sourceMap: true },
+    });
+    props.applicationTable.grantReadWriteData(memoriesFunction);
+    props.mediaBucket.grantReadWrite(memoriesFunction);
+    const memoriesIntegration = new apigatewayv2.CfnIntegration(this, 'MemoriesIntegration', {
+      apiId: api.ref,
+      integrationType: 'AWS_PROXY',
+      integrationUri: memoriesFunction.functionArn,
+      payloadFormatVersion: '2.0',
+    });
+    for (const [id, routeKey] of [
+      ['TimelineRoute', 'GET /timeline'],
+      ['CreateMemoryRoute', 'POST /memories'],
+      ['GetMemoryRoute', 'GET /memories/{memoryId}'],
+      ['UpdateMemoryRoute', 'PATCH /memories/{memoryId}'],
+      ['DeleteMemoryRoute', 'DELETE /memories/{memoryId}'],
+      ['CreateUploadRoute', 'POST /memories/{memoryId}/uploads'],
+      ['DeletePhotoRoute', 'DELETE /memories/{memoryId}/photos/{photoId}'],
+    ] as const) {
+      new apigatewayv2.CfnRoute(this, id, {
+        apiId: api.ref,
+        routeKey,
+        authorizationType: 'JWT',
+        authorizerId: authorizer.ref,
+        authorizationScopes: ['relationship-rag/access'],
+        target: `integrations/${memoriesIntegration.ref}`,
+      });
+    }
+    memoriesFunction.addPermission('ApiGatewayMemoriesInvocation', {
+      principal: new iam.ServicePrincipal('apigateway.amazonaws.com'),
+      sourceArn: cdk.Stack.of(this).formatArn({
+        service: 'execute-api',
+        resource: `${api.ref}/*/*/*`,
+      }),
     });
     new apigatewayv2.CfnStage(this, 'DefaultStage', {
       apiId: api.ref,

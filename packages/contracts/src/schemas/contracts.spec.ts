@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createMemoryRequestSchema, groundedAnswerSchema } from '../index.js';
+import {
+  createMemoryRequestSchema,
+  groundedAnswerSchema,
+  publicRuntimeConfigSchema,
+  verifiedIdentitySchema,
+} from '../index.js';
 
 describe('createMemoryRequestSchema', () => {
   it('accepts a bilingual text-only memory', () => {
@@ -20,6 +25,26 @@ describe('createMemoryRequestSchema', () => {
         occurredOn: '2025-02-30',
         body: 'This should not pass.',
         locale: 'en',
+      }),
+    ).toThrow();
+  });
+});
+
+describe('authentication contracts', () => {
+  it('accepts verified identity claims without client tenancy fields', () => {
+    expect(verifiedIdentitySchema.parse({ userId: 'subject-1', groups: ['OWNER'] })).toEqual({
+      userId: 'subject-1',
+      groups: ['OWNER'],
+    });
+  });
+
+  it('rejects a runtime configuration without the API scope', () => {
+    expect(() =>
+      publicRuntimeConfigSchema.parse({
+        apiOrigin: 'https://api.example.test',
+        authority: 'https://auth.example.test',
+        clientId: 'client',
+        scope: 'openid profile email',
       }),
     ).toThrow();
   });

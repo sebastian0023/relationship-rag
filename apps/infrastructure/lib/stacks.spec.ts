@@ -2,10 +2,11 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, it } from 'vitest';
 import type { StageConfig } from './config.js';
-import { AuthStack, DataStack } from './stacks.js';
+import { ApiStack, AuthStack, DataStack, EdgeStack } from './stacks.js';
 
 const dev: StageConfig = {
   stage: 'dev',
+  coupleId: 'couple-dev',
   deletionProtection: false,
   retainData: false,
   logRetentionDays: 14,
@@ -34,11 +35,57 @@ describe('privacy infrastructure', () => {
 
   it('disables public self-registration', () => {
     const app = new cdk.App();
-    const template = Template.fromStack(new AuthStack(app, 'auth-test', { config: dev }));
+    const template = Template.fromStack(
+      new AuthStack(app, 'auth-test', { config: dev, frontendDomain: 'frontend.example.test' }),
+    );
 
     template.hasResourceProperties('AWS::Cognito::UserPool', {
       AdminCreateUserConfig: { AllowAdminCreateUserOnly: true },
       Policies: Match.anyValue(),
+    });
+  });
+
+  it('protects GET /me with a Cognito JWT authorizer and API scope', () => {
+    const app = new cdk.App();
+    const data = new DataStack(app, 'data-test', { config: dev });
+    const auth = new AuthStack(app, 'auth-test', {
+      config: dev,
+      frontendDomain: 'frontend.example.test',
+    });
+    const template = Template.fromStack(
+      new ApiStack(app, 'api-test', {
+        config: dev,
+        applicationTable: data.applicationTable,
+        userPool: auth.userPool,
+        userPoolClient: auth.userPoolClient,
+        issuer: auth.issuer,
+        frontendDomain: 'frontend.example.test',
+        mediaBucket: data.mediaBucket,
+      }),
+    );
+
+    template.hasResourceProperties('AWS::ApiGatewayV2::Authorizer', {
+      AuthorizerType: 'JWT',
+      IdentitySource: ['$request.header.Authorization'],
+    });
+    template.hasResourceProperties('AWS::ApiGatewayV2::Route', {
+      RouteKey: 'GET /me',
+      AuthorizationType: 'JWT',
+      AuthorizationScopes: ['relationship-rag/access'],
+    });
+  });
+
+  it('uses an origin access control frontend with HTTPS security headers', () => {
+    const app = new cdk.App();
+    const template = Template.fromStack(new EdgeStack(app, 'edge-test', { config: dev }));
+
+    template.resourceCountIs('AWS::CloudFront::OriginAccessControl', 1);
+    template.hasResourceProperties('AWS::CloudFront::ResponseHeadersPolicy', {
+      ResponseHeadersPolicyConfig: Match.objectLike({
+        SecurityHeadersConfig: Match.objectLike({
+          FrameOptions: Match.objectLike({ FrameOption: 'DENY' }),
+        }),
+      }),
     });
   });
 });

@@ -1,0 +1,6 @@
+{
+  "apiOrigin": "https://example.execute-api.us-east-1.amazonaws.com",
+  "authority": "https://cognito-idp.us-east-1.amazonaws.com/example_pool",
+  "clientId": "replace-at-deploy",
+  "scope": "openid profile email relationship-rag/access"
+}

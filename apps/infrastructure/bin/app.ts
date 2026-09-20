@@ -26,15 +26,32 @@ const stackProps: cdk.StackProps = {
 };
 const prefix = `relationship-rag-${config.stage}`;
 
-const data = new DataStack(app, `${prefix}-data`, { ...stackProps, config });
-new AuthStack(app, `${prefix}-auth`, { ...stackProps, config });
-new EdgeStack(app, `${prefix}-edge`, { ...stackProps, config });
+const edge = new EdgeStack(app, `${prefix}-edge`, { ...stackProps, config });
+const data = new DataStack(app, `${prefix}-data`, {
+  ...stackProps,
+  config,
+  frontendDomain: edge.distribution.domainName,
+});
+const auth = new AuthStack(app, `${prefix}-auth`, {
+  ...stackProps,
+  config,
+  frontendDomain: edge.distribution.domainName,
+});
 new AiStack(app, `${prefix}-ai`, {
   ...stackProps,
   config,
   sourceBucket: data.ragSourceBucket,
 });
-new ApiStack(app, `${prefix}-api`, { ...stackProps, config });
+new ApiStack(app, `${prefix}-api`, {
+  ...stackProps,
+  config,
+  applicationTable: data.applicationTable,
+  userPool: auth.userPool,
+  userPoolClient: auth.userPoolClient,
+  issuer: auth.issuer,
+  frontendDomain: edge.distribution.domainName,
+  mediaBucket: data.mediaBucket,
+});
 const messaging = new MessagingStack(app, `${prefix}-messaging`, { ...stackProps, config });
 new ObservabilityStack(app, `${prefix}-observability`, {
   ...stackProps,

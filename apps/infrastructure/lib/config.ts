@@ -5,6 +5,7 @@ export type StageName = 'dev' | 'test' | 'prod';
 
 export interface StageConfig {
   readonly stage: StageName;
+  readonly coupleId: string;
   readonly deletionProtection: boolean;
   readonly retainData: boolean;
   readonly logRetentionDays: number;
@@ -28,6 +29,14 @@ const requirePositiveNumber = (record: Record<string, unknown>, key: string): nu
   return value;
 };
 
+const requireNonEmptyString = (record: Record<string, unknown>, key: string): string => {
+  const value = record[key];
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`Stage config field ${key} must be a non-empty string.`);
+  }
+  return value;
+};
+
 export const loadStageConfig = (stage: string): StageConfig => {
   if (!isStageName(stage)) {
     throw new Error(`Unknown stage "${stage}". Expected dev, test, or prod.`);
@@ -44,6 +53,7 @@ export const loadStageConfig = (stage: string): StageConfig => {
 
   const config: StageConfig = {
     stage,
+    coupleId: requireNonEmptyString(record, 'coupleId'),
     deletionProtection: requireBoolean(record, 'deletionProtection'),
     retainData: requireBoolean(record, 'retainData'),
     logRetentionDays: requirePositiveNumber(record, 'logRetentionDays'),

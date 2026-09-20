@@ -18,3 +18,7 @@ access patterns; never use scans on application request paths.
 
 Queries remain efficient and infrastructure stays small. Key design requires care, and persistence
 models must not leak into domain entities.
+
+## Phase 2 extension
+
+Memories have a canonical item at `COUPLE#<id>/MEMORY_ID#<id>` and a duplicated chronological projection at `COUPLE#<id>/MEMORY#<occurredOn>#<id>`. Transactions create, update, move, and delete both items together. Timeline reads query the projection descending; no GSI or scan is required.

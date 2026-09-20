@@ -1,5 +1,6 @@
 {
   "stage": "dev",
+  "coupleId": "relationship-rag-dev",
   "deletionProtection": false,
   "retainData": false,
   "logRetentionDays": 14,
