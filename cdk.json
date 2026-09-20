@@ -1,0 +1,9 @@
+{
+  "app": "node apps/infrastructure/dist/bin/app.js",
+  "context": {
+    "stage": "dev",
+    "@aws-cdk/core:defaultCrossStackReferences": "strong",
+    "@aws-cdk/aws-s3:createDefaultLoggingPolicy": true,
+    "@aws-cdk/aws-cloudfront:defaultSecurityPolicyTLSv1.2_2021": true
+  }
+}

@@ -1,0 +1,40 @@
+name: Deploy dev
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: relationship-rag-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ vars.AWS_ROLE_ARN != '' }}
+    runs-on: ubuntu-latest
+    environment: dev
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - name: Authenticate to AWS with GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      - name: Deploy development stacks
+        run: >-
+          npm run --workspace @relationship-rag/infrastructure synth --
+          --context stage=dev >/dev/null &&
+          npx cdk deploy --app 'node apps/infrastructure/dist/bin/app.js'
+          --context stage=dev --all --require-approval never

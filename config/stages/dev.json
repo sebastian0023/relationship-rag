@@ -1,0 +1,7 @@
+{
+  "stage": "dev",
+  "deletionProtection": false,
+  "retainData": false,
+  "logRetentionDays": 14,
+  "monthlyBudgetUsd": 15
+}

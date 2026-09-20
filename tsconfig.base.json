@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "sourceMap": true,
+    "paths": {
+      "@relationship-rag/contracts": ["./packages/contracts/src/index.ts"],
+      "@relationship-rag/domain": ["./packages/domain/src/index.ts"],
+      "@relationship-rag/observability": ["./packages/observability/src/index.ts"],
+      "@relationship-rag/test-utils": ["./packages/test-utils/src/index.ts"]
+    }
+  }
+}

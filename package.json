@@ -1,0 +1,46 @@
+{
+  "name": "relationship-rag",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A private, serverless relationship timeline, grounded RAG assistant, and card delivery app.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.22.3"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "synth": "npm run --workspace @relationship-rag/infrastructure build && cdk synth",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build && npm run synth"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.6.2",
+    "@vitest/coverage-v8": "5.0.1",
+    "eslint": "10.11.0",
+    "globals": "17.12.0",
+    "prettier": "3.9.8",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.0",
+    "vitest": "5.0.1"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "@parcel/watcher@2.6.0": true,
+    "lmdb@3.5.6": true,
+    "msgpackr-extract@3.0.4": true
+  }
+}

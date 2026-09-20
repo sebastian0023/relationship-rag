@@ -1,0 +1,197 @@
+openapi: 3.1.0
+info:
+  title: Relationship RAG API
+  version: 0.1.0
+  description: Private API contract. Schemas are implemented in packages/contracts.
+servers:
+  - url: https://api.example.invalid
+    description: Placeholder replaced by stage outputs
+security:
+  - cognitoJwt: []
+paths:
+  /me:
+    get:
+      operationId: getMe
+      responses:
+        '200':
+          description: Authenticated member profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /timeline:
+    get:
+      operationId: getTimeline
+      responses:
+        '200':
+          description: Chronological memories for the authenticated couple
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /memories:
+    post:
+      operationId: createMemory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMemoryRequest'
+      responses:
+        '201':
+          description: Memory created
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /memories/{memoryId}:
+    parameters:
+      - $ref: '#/components/parameters/MemoryId'
+    get:
+      operationId: getMemory
+      responses:
+        '200': { description: Memory details }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateMemory
+      responses:
+        '200': { description: Updated memory }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /memories/{memoryId}/uploads:
+    parameters:
+      - $ref: '#/components/parameters/MemoryId'
+    post:
+      operationId: createMemoryUpload
+      responses:
+        '200': { description: Presigned upload instructions }
+  /memories/{memoryId}/index:
+    parameters:
+      - $ref: '#/components/parameters/MemoryId'
+    post:
+      operationId: indexMemory
+      responses:
+        '202': { description: Indexing accepted }
+  /conversations:
+    post:
+      operationId: createConversation
+      responses:
+        '201': { description: Conversation created }
+  /conversations/{conversationId}:
+    get:
+      operationId: getConversation
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '200': { description: Conversation with messages }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /conversations/{conversationId}/messages:
+    post:
+      operationId: createMessage
+      parameters:
+        - $ref: '#/components/parameters/ConversationId'
+      responses:
+        '201': { description: Grounded assistant response }
+  /cards/generate:
+    post:
+      operationId: generateCard
+      responses:
+        '200': { description: Generated editable draft }
+  /cards:
+    post:
+      operationId: saveCard
+      responses:
+        '201': { description: Saved card draft }
+  /cards/{cardId}:
+    patch:
+      operationId: updateCard
+      parameters:
+        - $ref: '#/components/parameters/CardId'
+      responses:
+        '200': { description: Updated card }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /cards/{cardId}/send:
+    post:
+      operationId: sendCard
+      parameters:
+        - $ref: '#/components/parameters/CardId'
+      responses:
+        '202': { description: Delivery accepted }
+  /inbox:
+    get:
+      operationId: getInbox
+      responses:
+        '200': { description: Recipient inbox }
+  /inbox/{cardId}/read:
+    patch:
+      operationId: markInboxItemRead
+      parameters:
+        - $ref: '#/components/parameters/CardId'
+      responses:
+        '200': { description: Inbox item marked read }
+components:
+  securitySchemes:
+    cognitoJwt:
+      type: openIdConnect
+      openIdConnectUrl: https://cognito-idp.example.invalid/.well-known/openid-configuration
+  parameters:
+    MemoryId:
+      name: memoryId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ConversationId:
+      name: conversationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CardId:
+      name: cardId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    MemberProfile:
+      type: object
+      required: [userId, coupleId, role, displayName]
+      properties:
+        userId: { type: string }
+        coupleId: { type: string }
+        role: { type: string, enum: [OWNER, PARTNER] }
+        displayName: { type: string }
+    CreateMemoryRequest:
+      type: object
+      additionalProperties: false
+      required: [title, occurredOn, body, locale]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 120 }
+        occurredOn: { type: string, format: date }
+        body: { type: string, minLength: 1, maxLength: 10000 }
+        locale: { type: string, enum: [en, es] }
+        tags:
+          type: array
+          maxItems: 20
+          items: { type: string, minLength: 1, maxLength: 40 }
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        correlationId: { type: string }
+  responses:
+    BadRequest:
+      description: Request validation failed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    Unauthorized:
+      description: Authentication is required
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
+    NotFound:
+      description: Resource does not exist within the authenticated tenancy
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ApiError' }
