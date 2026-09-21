@@ -22,3 +22,7 @@ models must not leak into domain entities.
 ## Phase 2 extension
 
 Memories have a canonical item at `COUPLE#<id>/MEMORY_ID#<id>` and a duplicated chronological projection at `COUPLE#<id>/MEMORY#<occurredOn>#<id>`. Transactions create, update, move, and delete both items together. Timeline reads query the projection descending; no GSI or scan is required.
+
+## Phase 4 extension
+
+Private conversations use `COUPLE#<coupleId>#USER#<userId>` partitions, with canonical conversation records, creation-order projections, chronological turn records, and request-ID records. Each request path is an exact-key read or a partition query; no GSI or scan is required. The user ID in the partition is the conversation visibility boundary.

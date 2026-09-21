@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
-import { BedrockAgentRuntimeClient, RetrieveCommand } from '@aws-sdk/client-bedrock-agent-runtime';
-import type {
-  MemoryRetriever,
-  MemoryRetrievalFilters,
-  RetrievedMemory,
-} from '../application/ports.js';
+import {
+  BedrockAgentRuntimeClient,
+  RetrieveCommand,
+  type RetrievalFilter,
+} from '@aws-sdk/client-bedrock-agent-runtime';
+import type { MemoryRetrievalFilters } from '@relationship-rag/contracts';
+import type { MemoryRetriever, RetrievedMemory } from '../application/ports.js';
 
 interface CanonicalMemory {
   readonly memoryId: string;
@@ -26,8 +27,8 @@ const epoch = (date: string) => Date.parse(`${date}T00:00:00.000Z`) / 1000;
 export const buildRetrievalFilter = (
   coupleId: string,
   filters?: MemoryRetrievalFilters,
-): unknown => {
-  const all: unknown[] = [{ equals: { key: 'coupleId', value: coupleId } }];
+): RetrievalFilter => {
+  const all: RetrievalFilter[] = [{ equals: { key: 'coupleId', value: coupleId } }];
   if (filters?.occurredOnFrom !== undefined)
     all.push({ greaterThanOrEquals: { key: 'occurredOn', value: epoch(filters.occurredOnFrom) } });
   if (filters?.occurredOnTo !== undefined)
@@ -38,7 +39,7 @@ export const buildRetrievalFilter = (
     all.push({
       orAll: filters.tags.map((tag) => ({ listContains: { key: 'tags', value: hash(tag) } })),
     });
-  return { andAll: all };
+  return all.length === 1 ? all[0]! : { andAll: all };
 };
 
 export class BedrockMemoryRetriever implements MemoryRetriever {
@@ -62,7 +63,7 @@ export class BedrockMemoryRetriever implements MemoryRetriever {
         retrievalConfiguration: {
           vectorSearchConfiguration: {
             numberOfResults: 5,
-            filter: buildRetrievalFilter(coupleId, filters) as never,
+            filter: buildRetrievalFilter(coupleId, filters),
           },
         },
       }),

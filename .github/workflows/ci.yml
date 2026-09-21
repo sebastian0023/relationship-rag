@@ -37,6 +37,9 @@ jobs:
       - name: Test
         run: npm run test:coverage
 
+      - name: Validate grounded chat evaluation dataset
+        run: npm run rag:chat-eval
+
       - name: Build
         run: npm run build
 

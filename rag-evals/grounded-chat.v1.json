@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "minimumRecall": 0.9,
+  "minimumAbstentionRate": 0.95,
+  "cases": [
+    {
+      "id": "en-known-anniversary",
+      "coupleId": "couple-a",
+      "question": "Where did we celebrate our anniversary?",
+      "expectedMemoryIds": ["11111111-1111-4111-8111-111111111111"],
+      "requiredFacts": ["Oaxaca"],
+      "forbiddenFacts": ["Paris"],
+      "abstention": false
+    },
+    {
+      "id": "es-known-dinner",
+      "coupleId": "couple-a",
+      "question": "¿Qué cocinamos para nuestra cena especial?",
+      "expectedMemoryIds": ["22222222-2222-4222-8222-222222222222"],
+      "requiredFacts": ["mole"],
+      "forbiddenFacts": ["sushi"],
+      "abstention": false
+    },
+    {
+      "id": "unknown-dog",
+      "coupleId": "couple-a",
+      "question": "What is our dog's name?",
+      "expectedMemoryIds": [],
+      "forbiddenFacts": ["Rex"],
+      "abstention": true
+    },
+    {
+      "id": "filtered-date",
+      "coupleId": "couple-a",
+      "question": "What did we do in 2025?",
+      "filters": { "occurredOnFrom": "2025-01-01", "occurredOnTo": "2025-12-31" },
+      "expectedMemoryIds": ["33333333-3333-4333-8333-333333333333"],
+      "abstention": false
+    },
+    {
+      "id": "tenant-isolation",
+      "coupleId": "couple-a",
+      "question": "What did we do at the beach?",
+      "expectedMemoryIds": ["44444444-4444-4444-8444-444444444444"],
+      "forbiddenMemoryIds": ["55555555-5555-4555-8555-555555555555"],
+      "abstention": false
+    },
+    {
+      "id": "follow-up",
+      "coupleId": "couple-a",
+      "history": ["Where was our anniversary?", "We celebrated in Oaxaca."],
+      "question": "When was that?",
+      "expectedMemoryIds": ["11111111-1111-4111-8111-111111111111"],
+      "abstention": false
+    }
+  ]
+}

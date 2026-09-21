@@ -16,3 +16,7 @@ evaluation results demonstrate that Micro misses an agreed quality threshold.
 
 Model output is always treated as untrusted and schema validated. Model selection remains behind an
 application port, and quality/cost changes require evaluation evidence.
+
+## Phase 4 extension
+
+Nova Micro uses Bedrock Converse at temperature zero. Since the model does not provide native structured outputs, the application requests JSON, validates it with Zod, and independently verifies every cited memory ID against retrieved evidence. A 25-second application deadline keeps generation within the HTTP API response budget.

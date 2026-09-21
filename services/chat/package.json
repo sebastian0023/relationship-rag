@@ -11,6 +11,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@aws-sdk/client-bedrock-agent-runtime": "^3.1136.0"
+    "@aws-sdk/client-bedrock-agent-runtime": "^3.1136.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1136.0",
+    "@aws-sdk/client-dynamodb": "^3.1136.0",
+    "@aws-sdk/lib-dynamodb": "^3.1136.0",
+    "@relationship-rag/contracts": "*",
+    "@relationship-rag/domain": "*",
+    "@relationship-rag/observability": "*"
   }
 }

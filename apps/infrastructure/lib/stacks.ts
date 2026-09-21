@@ -413,6 +413,7 @@ interface ApiStackProps extends RelationshipStackProps {
   readonly issuer: string;
   readonly frontendDomain: string;
   readonly mediaBucket: s3.IBucket;
+  readonly knowledgeBaseId: string;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -538,6 +539,85 @@ export class ApiStack extends cdk.Stack {
         service: 'execute-api',
         resource: `${api.ref}/*/*/*`,
       }),
+    });
+    const chatLogGroup = new logs.LogGroup(this, 'ChatLogGroup', {
+      retention: props.config.retainData
+        ? logs.RetentionDays.THREE_MONTHS
+        : logs.RetentionDays.ONE_MONTH,
+      removalPolicy: removalPolicyFor(props.config),
+    });
+    const chatFunction = new lambdaNodejs.NodejsFunction(this, 'ChatFunction', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      entry: resolve(process.cwd(), 'services/chat/src/handlers/chat.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(28),
+      memorySize: 1024,
+      tracing: lambda.Tracing.ACTIVE,
+      environment: {
+        APPLICATION_TABLE_NAME: props.applicationTable.tableName,
+        COUPLE_ID: props.config.coupleId,
+        KNOWLEDGE_BASE_ID: props.knowledgeBaseId,
+      },
+      logGroup: chatLogGroup,
+      bundling: { minify: true, sourceMap: true },
+    });
+    props.applicationTable.grantReadWriteData(chatFunction);
+    chatFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['bedrock:Retrieve'],
+        resources: [
+          `arn:${cdk.Aws.PARTITION}:bedrock:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:knowledge-base/${props.knowledgeBaseId}`,
+        ],
+      }),
+    );
+    chatFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['bedrock:InvokeModel'],
+        resources: [
+          `arn:${cdk.Aws.PARTITION}:bedrock:${cdk.Aws.REGION}::foundation-model/amazon.nova-micro-v1:0`,
+        ],
+      }),
+    );
+    const chatIntegration = new apigatewayv2.CfnIntegration(this, 'ChatIntegration', {
+      apiId: api.ref,
+      integrationType: 'AWS_PROXY',
+      integrationUri: chatFunction.functionArn,
+      payloadFormatVersion: '2.0',
+      timeoutInMillis: 30_000,
+    });
+    for (const [id, routeKey] of [
+      ['CreateConversationRoute', 'POST /conversations'],
+      ['ListConversationsRoute', 'GET /conversations'],
+      ['GetConversationRoute', 'GET /conversations/{conversationId}'],
+      ['CreateChatMessageRoute', 'POST /conversations/{conversationId}/messages'],
+    ] as const) {
+      new apigatewayv2.CfnRoute(this, id, {
+        apiId: api.ref,
+        routeKey,
+        authorizationType: 'JWT',
+        authorizerId: authorizer.ref,
+        authorizationScopes: ['relationship-rag/access'],
+        target: `integrations/${chatIntegration.ref}`,
+      });
+    }
+    chatFunction.addPermission('ApiGatewayChatInvocation', {
+      principal: new iam.ServicePrincipal('apigateway.amazonaws.com'),
+      sourceArn: cdk.Stack.of(this).formatArn({
+        service: 'execute-api',
+        resource: `${api.ref}/*/*/*`,
+      }),
+    });
+    new cloudwatch.Alarm(this, 'ChatDependencyFailureAlarm', {
+      metric: chatFunction.metricErrors({ period: cdk.Duration.minutes(5) }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    new cloudwatch.Alarm(this, 'ChatLatencyAlarm', {
+      metric: chatFunction.metricDuration({ period: cdk.Duration.minutes(5) }),
+      threshold: 25_000,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     new apigatewayv2.CfnStage(this, 'DefaultStage', {
       apiId: api.ref,
