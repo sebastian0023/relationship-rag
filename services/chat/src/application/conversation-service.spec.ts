@@ -140,4 +140,106 @@ describe('ConversationService', () => {
       }),
     ).rejects.toBeInstanceOf(ConflictError);
   });
+
+  it('uses completed context to rewrite follow-up retrieval queries', async () => {
+    const repository = new FakeConversations();
+    repository.turns.push({
+      turnId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      requestId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      question: 'Where was our anniversary?',
+      status: 'COMPLETED',
+      createdAt: clock.now(),
+      answer: 'Oaxaca.',
+      citations: [],
+      abstained: true,
+    });
+    let retrievalQuery = '';
+    const service = new ConversationService(
+      repository,
+      {
+        retrieve: async (_coupleId, query) => {
+          retrievalQuery = query;
+          return [];
+        },
+      },
+      { generate: async () => ({ answer: '', citedMemoryIds: [], abstained: true }) },
+      { resolve: async () => 'When was our anniversary in Oaxaca?' },
+      { next: () => 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
+      clock,
+    );
+
+    await service.message('couple', 'user', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', {
+      requestId: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+      question: 'When was that?',
+    });
+    expect(retrievalQuery).toBe('When was our anniversary in Oaxaca?');
+  });
+
+  it('records safe failure state when generation times out', async () => {
+    const repository = new FakeConversations();
+    const timeout = Object.assign(new Error('deadline exceeded'), { name: 'TimeoutError' });
+    const service = new ConversationService(
+      repository,
+      {
+        retrieve: async () => [
+          {
+            memoryId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+            title: 'Memory',
+            content: 'text',
+            relevance: 1,
+          },
+        ],
+      },
+      { generate: async () => Promise.reject(timeout) },
+      { resolve: async (question) => question },
+      { next: () => '12121212-1212-4121-8121-121212121212' },
+      clock,
+    );
+
+    await expect(
+      service.message('couple', 'user', '13131313-1313-4131-8131-131313131313', {
+        requestId: '14141414-1414-4141-8141-141414141414',
+        question: 'What happened?',
+      }),
+    ).rejects.toBe(timeout);
+    expect(repository.turns.at(-1)).toMatchObject({ status: 'FAILED', failureCode: 'TIMEOUT' });
+  });
+
+  it('rejects fabricated citations and stores a dependency failure', async () => {
+    const repository = new FakeConversations();
+    const service = new ConversationService(
+      repository,
+      {
+        retrieve: async () => [
+          {
+            memoryId: '15151515-1515-4151-8151-151515151515',
+            title: 'Memory',
+            content: 'text',
+            relevance: 1,
+          },
+        ],
+      },
+      {
+        generate: async () => ({
+          answer: 'Unsupported.',
+          citedMemoryIds: ['16161616-1616-4161-8161-161616161616'],
+          abstained: false,
+        }),
+      },
+      { resolve: async (question) => question },
+      { next: () => '17171717-1717-4171-8171-171717171717' },
+      clock,
+    );
+
+    await expect(
+      service.message('couple', 'user', '18181818-1818-4181-8181-181818181818', {
+        requestId: '19191919-1919-4191-8191-191919191919',
+        question: 'What happened?',
+      }),
+    ).rejects.toThrow('outside supplied evidence');
+    expect(repository.turns.at(-1)).toMatchObject({
+      status: 'FAILED',
+      failureCode: 'DEPENDENCY_FAILURE',
+    });
+  });
 });
