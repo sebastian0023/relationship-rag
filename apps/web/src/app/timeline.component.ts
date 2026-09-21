@@ -35,6 +35,7 @@ import { MemoriesApiService } from './memories-api.service.js';
               }
             </p>
             <h2 class="mt-2 font-display text-3xl">{{ memory.title }}</h2>
+            <p class="mt-2 text-xs text-cream/55">Index: {{ memory.ingestionStatus }}</p>
             <p class="mt-3 line-clamp-2 text-cream/65">{{ memory.body }}</p>
             <div class="mt-4 flex flex-wrap gap-2">
               @for (tag of memory.tags; track tag) {

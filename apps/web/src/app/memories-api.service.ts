@@ -1,10 +1,12 @@
 import { Injectable, inject } from '@angular/core';
 import {
   memorySchema,
+  ingestionStatusSchema,
   timelineResponseSchema,
   type CreateMemoryRequest,
   type CreateUploadRequest,
   type MemoryDto,
+  type IngestionStatusResponse,
   type UpdateMemoryRequest,
 } from '@relationship-rag/contracts';
 import { AuthService } from './auth/auth.service.js';
@@ -43,6 +45,14 @@ export class MemoriesApiService {
   public async deletePhoto(memoryId: string, photoId: string): Promise<void> {
     await this.request(`/memories/${memoryId}/photos/${photoId}`, { method: 'DELETE' });
   }
+  public async ingestion(memoryId: string): Promise<IngestionStatusResponse> {
+    return ingestionStatusSchema.parse(await this.request(`/memories/${memoryId}/ingestion`));
+  }
+  public async reindex(memoryId: string): Promise<IngestionStatusResponse> {
+    return ingestionStatusSchema.parse(
+      await this.request(`/memories/${memoryId}/reindex`, { method: 'POST' }),
+    );
+  }
   public async upload(memoryId: string, file: File): Promise<void> {
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
       throw new Error('Choose a JPEG, PNG, or WebP photo.');
@@ -75,6 +85,6 @@ export class MemoriesApiService {
       const error = (await response.json().catch(() => ({}))) as { message?: string };
       throw new Error(error.message ?? 'Unable to complete this request.');
     }
-    return response.status === 202 ? {} : response.json();
+    return response.status === 204 ? {} : response.json();
   }
 }

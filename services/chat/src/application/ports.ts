@@ -5,8 +5,19 @@ export interface RetrievedMemory {
   readonly relevance: number;
 }
 
+export interface MemoryRetrievalFilters {
+  readonly occurredOnFrom?: string;
+  readonly occurredOnTo?: string;
+  readonly category?: string;
+  readonly tags?: readonly string[];
+}
+
 export interface MemoryRetriever {
-  retrieve(coupleId: string, query: string): Promise<readonly RetrievedMemory[]>;
+  retrieve(
+    coupleId: string,
+    query: string,
+    filters?: MemoryRetrievalFilters,
+  ): Promise<readonly RetrievedMemory[]>;
 }
 
 export interface GroundedGeneration {

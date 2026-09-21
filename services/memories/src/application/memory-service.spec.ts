@@ -3,9 +3,12 @@ import { ConflictError, ResourceNotFoundError } from '@relationship-rag/domain';
 import { MemoryService } from './memory-service.js';
 import type { MemoryRepository } from './memory-repository.js';
 import type { Memory } from '../domain/memory.js';
+import type { IngestionBatch, IngestionState, IngestionWork } from '../domain/ingestion.js';
 
 class FakeRepository implements MemoryRepository {
   public readonly values = new Map<string, Memory>();
+  public readonly ingestion = new Map<string, IngestionState>();
+  public readonly work = new Map<string, IngestionWork>();
   public async create(memory: Memory): Promise<void> {
     this.values.set(memory.memoryId, memory);
   }
@@ -25,6 +28,58 @@ class FakeRepository implements MemoryRepository {
   public async delete(memory: Memory): Promise<void> {
     this.values.delete(memory.memoryId);
   }
+  public async getIngestion(_coupleId: string, memoryId: string): Promise<IngestionState | null> {
+    return this.ingestion.get(memoryId) ?? null;
+  }
+  public async requestIngestion(work: IngestionWork): Promise<IngestionState> {
+    const current = this.ingestion.get(work.memoryId);
+    if (
+      current?.status === 'PENDING' &&
+      current.fingerprint === work.fingerprint &&
+      current.generation >= work.generation
+    )
+      return current;
+    const state: IngestionState = {
+      coupleId: work.coupleId,
+      memoryId: work.memoryId,
+      status: 'PENDING',
+      generation: work.generation,
+      ...(work.fingerprint === undefined ? {} : { fingerprint: work.fingerprint }),
+      requestedAt: new Date().toISOString(),
+      attempts: work.attempts,
+    };
+    this.ingestion.set(work.memoryId, state);
+    this.work.set(work.memoryId, work);
+    return state;
+  }
+  public async completeIngestion(
+    _coupleId: string,
+    memoryId: string,
+    generation: number,
+    status: 'INDEXED' | 'FAILED',
+    failureCode?: string,
+  ): Promise<void> {
+    const state = this.ingestion.get(memoryId);
+    if (state === undefined || state.generation !== generation) throw new ConflictError();
+    this.ingestion.set(memoryId, {
+      ...state,
+      status,
+      ...(failureCode === undefined ? {} : { failureCode }),
+      indexedAt: new Date().toISOString(),
+    });
+    this.work.delete(memoryId);
+  }
+  public async listDueIngestionWork(): Promise<readonly IngestionWork[]> {
+    return [...this.work.values()];
+  }
+  public async removeIngestionWork(_coupleId: string, memoryId: string): Promise<void> {
+    this.work.delete(memoryId);
+  }
+  public async getIngestionBatch(): Promise<IngestionBatch | null> {
+    return null;
+  }
+  public async saveIngestionBatch(): Promise<void> {}
+  public async clearIngestionBatch(): Promise<void> {}
 }
 const request = {
   title: 'First trip',
@@ -41,9 +96,23 @@ describe('MemoryService', () => {
       coupleId: 'couple-1',
       createdBy: 'owner-1',
       version: 1,
-      ingestionStatus: 'NOT_REQUESTED',
+      ingestionStatus: 'PENDING',
       photos: [],
     });
+  });
+  it('queues a new generation when content changes but not when photos change', async () => {
+    const repository = new FakeRepository();
+    const service = new MemoryService(repository);
+    const memory = await service.create('couple-1', 'owner-1', request);
+    const updated = await service.update('couple-1', memory.memoryId, {
+      ...request,
+      body: 'Changed.',
+      version: memory.version,
+    });
+    expect(repository.ingestion.get(memory.memoryId)?.generation).toBe(2);
+    await service.reservePhoto('couple-1', memory.memoryId, 'image/jpeg');
+    expect(repository.ingestion.get(memory.memoryId)?.generation).toBe(2);
+    expect(updated.ingestionStatus).toBe('PENDING');
   });
   it('rejects a stale update', async () => {
     const repository = new FakeRepository();

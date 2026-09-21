@@ -4,6 +4,7 @@ import { idSchema, isoDateSchema, isoDateTimeSchema, localeSchema } from './comm
 const memoryTitleSchema = z.string().trim().min(1).max(120);
 const memoryBodySchema = z.string().trim().min(1).max(10_000);
 const memoryTagSchema = z.string().trim().min(1).max(40);
+const memoryCategorySchema = z.string().trim().min(1).max(40);
 export const photoContentTypeSchema = z.enum(['image/jpeg', 'image/png', 'image/webp']);
 export const photoProcessingStatusSchema = z.enum(['PENDING', 'READY', 'FAILED']);
 
@@ -13,6 +14,7 @@ export const createMemoryRequestSchema = z.object({
   body: memoryBodySchema,
   locale: localeSchema,
   tags: z.array(memoryTagSchema).max(20).default([]),
+  category: memoryCategorySchema.optional(),
   location: z.string().trim().min(1).max(200).optional(),
 });
 
@@ -39,6 +41,14 @@ export const memorySchema = createMemoryRequestSchema.extend({
 
 export const updateMemoryRequestSchema = createMemoryRequestSchema.extend({
   version: z.number().int().positive(),
+});
+
+export const ingestionStatusSchema = z.object({
+  status: z.enum(['NOT_REQUESTED', 'PENDING', 'INDEXED', 'FAILED']),
+  requestedAt: isoDateTimeSchema.optional(),
+  indexedAt: isoDateTimeSchema.optional(),
+  failureCode: z.string().min(1).max(80).optional(),
+  retryable: z.boolean(),
 });
 
 export const timelineQuerySchema = z.object({
@@ -73,3 +83,4 @@ export type MemoryDto = z.infer<typeof memorySchema>;
 export type TimelineResponse = z.infer<typeof timelineResponseSchema>;
 export type CreateUploadRequest = z.infer<typeof createUploadRequestSchema>;
 export type UploadInstructions = z.infer<typeof uploadInstructionsSchema>;
+export type IngestionStatusResponse = z.infer<typeof ingestionStatusSchema>;

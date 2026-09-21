@@ -2,7 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, it } from 'vitest';
 import type { StageConfig } from './config.js';
-import { ApiStack, AuthStack, DataStack, EdgeStack } from './stacks.js';
+import { AiStack, ApiStack, AuthStack, DataStack, EdgeStack } from './stacks.js';
 
 const dev: StageConfig = {
   stage: 'dev',
@@ -87,5 +87,28 @@ describe('privacy infrastructure', () => {
         }),
       }),
     });
+  });
+
+  it('provisions a private Knowledge Base ingestion path with a single coordinator', () => {
+    const app = new cdk.App();
+    const data = new DataStack(app, 'data-test', { config: dev });
+    const template = Template.fromStack(
+      new AiStack(app, 'ai-test', {
+        config: dev,
+        sourceBucket: data.ragSourceBucket,
+        applicationTable: data.applicationTable,
+      }),
+    );
+
+    template.resourceCountIs('AWS::S3Vectors::VectorBucket', 1);
+    template.hasResourceProperties('AWS::Bedrock::KnowledgeBase', {
+      KnowledgeBaseConfiguration: Match.objectLike({ Type: 'VECTOR' }),
+    });
+    template.hasResourceProperties('AWS::Bedrock::DataSource', {
+      VectorIngestionConfiguration: Match.objectLike({
+        ChunkingConfiguration: Match.objectLike({ ChunkingStrategy: 'FIXED_SIZE' }),
+      }),
+    });
+    template.hasResourceProperties('AWS::Lambda::Function', { ReservedConcurrentExecutions: 1 });
   });
 });

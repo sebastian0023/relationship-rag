@@ -1,5 +1,7 @@
 # Architecture decision records
 
+- [0006: Batched Knowledge Base synchronization](./0006-batched-rag-ingestion.md)
+
 ADRs are immutable once accepted. If a decision changes, add a new ADR that supersedes the old one.
 
 | ADR  | Decision                                | Status   |
