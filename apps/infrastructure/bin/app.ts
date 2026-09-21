@@ -37,7 +37,7 @@ const auth = new AuthStack(app, `${prefix}-auth`, {
   config,
   frontendDomain: edge.distribution.domainName,
 });
-new AiStack(app, `${prefix}-ai`, {
+const ai = new AiStack(app, `${prefix}-ai`, {
   ...stackProps,
   config,
   sourceBucket: data.ragSourceBucket,
@@ -52,6 +52,7 @@ new ApiStack(app, `${prefix}-api`, {
   issuer: auth.issuer,
   frontendDomain: edge.distribution.domainName,
   mediaBucket: data.mediaBucket,
+  knowledgeBaseId: ai.knowledgeBaseId,
 });
 const messaging = new MessagingStack(app, `${prefix}-messaging`, { ...stackProps, config });
 new ObservabilityStack(app, `${prefix}-observability`, {

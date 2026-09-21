@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createMemoryRequestSchema,
   groundedAnswerSchema,
+  createMessageRequestSchema,
   publicRuntimeConfigSchema,
   verifiedIdentitySchema,
 } from '../index.js';
@@ -69,5 +70,17 @@ describe('groundedAnswerSchema', () => {
         abstained: true,
       }),
     ).toMatchObject({ abstained: true });
+  });
+});
+
+describe('chat request contracts', () => {
+  it('requires a retry-safe request ID and rejects inverted dates', () => {
+    expect(() =>
+      createMessageRequestSchema.parse({
+        requestId: '82be0dac-3a0a-4c25-8800-1f769687f2dc',
+        question: 'When was that?',
+        filters: { occurredOnFrom: '2026-01-02', occurredOnTo: '2026-01-01' },
+      }),
+    ).toThrow('End date must not precede start date.');
   });
 });

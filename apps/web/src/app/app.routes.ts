@@ -6,6 +6,7 @@ import { LoginComponent } from './login.component.js';
 import { TimelineComponent } from './timeline.component.js';
 import { MemoryEditorComponent } from './memory-editor.component.js';
 import { MemoryDetailComponent } from './memory-detail.component.js';
+import { ChatComponent } from './chat.component.js';
 
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'login' },
@@ -21,6 +22,8 @@ export const routes: Routes = [
       { path: 'timeline/new', component: MemoryEditorComponent },
       { path: 'timeline/:memoryId', component: MemoryDetailComponent },
       { path: 'timeline/:memoryId/edit', component: MemoryEditorComponent },
+      { path: 'chat', component: ChatComponent },
+      { path: 'chat/:conversationId', component: ChatComponent },
     ],
   },
   { path: '**', redirectTo: 'app' },
