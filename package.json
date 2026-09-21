@@ -24,6 +24,7 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "synth": "npm run --workspace @relationship-rag/infrastructure build && cdk synth",
+    "rag:backfill": "node scripts/rag-backfill.mjs",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build && npm run synth"
   },
   "devDependencies": {

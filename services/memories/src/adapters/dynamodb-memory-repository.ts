@@ -2,11 +2,14 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocumentClient,
   GetCommand,
+  PutCommand,
   QueryCommand,
+  DeleteCommand,
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { MemoryRepository } from '../application/memory-repository.js';
 import type { Memory } from '../domain/memory.js';
+import type { IngestionBatch, IngestionState, IngestionWork } from '../domain/ingestion.js';
 
 const canonicalKey = (memory: Memory) => ({
   PK: `COUPLE#${memory.coupleId}`,
@@ -17,6 +20,15 @@ const timelineKey = (memory: Memory) => ({
   SK: `MEMORY#${memory.occurredOn}#${memory.memoryId}`,
 });
 const toItem = (memory: Memory, keys: object) => ({ ...keys, entityType: 'MEMORY', ...memory });
+const ingestionKey = (coupleId: string, memoryId: string) => ({
+  PK: `COUPLE#${coupleId}`,
+  SK: `INGESTION#${memoryId}`,
+});
+const workKey = (coupleId: string, memoryId: string) => ({
+  PK: `COUPLE#${coupleId}`,
+  SK: `INGESTION_WORK#${memoryId}`,
+});
+const batchKey = (coupleId: string) => ({ PK: `COUPLE#${coupleId}`, SK: 'INGESTION_JOB' });
 
 export class DynamoDbMemoryRepository implements MemoryRepository {
   private readonly client: DynamoDBDocumentClient;
@@ -148,6 +160,151 @@ export class DynamoDbMemoryRepository implements MemoryRepository {
             },
           },
         ],
+      }),
+    );
+  }
+
+  public async getIngestion(coupleId: string, memoryId: string): Promise<IngestionState | null> {
+    const result = await this.client.send(
+      new GetCommand({
+        TableName: this.tableName,
+        Key: ingestionKey(coupleId, memoryId),
+        ConsistentRead: true,
+      }),
+    );
+    return (result.Item as IngestionState | undefined) ?? null;
+  }
+
+  public async requestIngestion(work: IngestionWork): Promise<IngestionState> {
+    const current = await this.getIngestion(work.coupleId, work.memoryId);
+    if (
+      current?.status === 'PENDING' &&
+      current.fingerprint === work.fingerprint &&
+      current.generation >= work.generation
+    )
+      return current;
+    const state: IngestionState = {
+      coupleId: work.coupleId,
+      memoryId: work.memoryId,
+      status: 'PENDING',
+      generation: work.generation,
+      ...(work.fingerprint === undefined ? {} : { fingerprint: work.fingerprint }),
+      requestedAt: new Date().toISOString(),
+      attempts: work.attempts,
+    };
+    await this.client.send(
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            Put: {
+              TableName: this.tableName,
+              Item: {
+                ...ingestionKey(work.coupleId, work.memoryId),
+                entityType: 'INGESTION',
+                ...state,
+              },
+            },
+          },
+          {
+            Put: {
+              TableName: this.tableName,
+              Item: {
+                ...workKey(work.coupleId, work.memoryId),
+                entityType: 'INGESTION_WORK',
+                ...work,
+              },
+            },
+          },
+        ],
+      }),
+    );
+    return state;
+  }
+
+  public async completeIngestion(
+    coupleId: string,
+    memoryId: string,
+    generation: number,
+    status: 'INDEXED' | 'FAILED',
+    failureCode?: string,
+  ): Promise<void> {
+    const values: Record<string, unknown> = {
+      ':status': status,
+      ':generation': generation,
+      ':updatedAt': new Date().toISOString(),
+      ':failureCode': failureCode,
+    };
+    await this.client.send(
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            Update: {
+              TableName: this.tableName,
+              Key: ingestionKey(coupleId, memoryId),
+              UpdateExpression:
+                'SET #status = :status, indexedAt = :updatedAt, failureCode = :failureCode',
+              ConditionExpression: 'generation = :generation',
+              ExpressionAttributeNames: { '#status': 'status' },
+              ExpressionAttributeValues: values,
+            },
+          },
+          { Delete: { TableName: this.tableName, Key: workKey(coupleId, memoryId) } },
+        ],
+      }),
+    );
+  }
+
+  public async listDueIngestionWork(
+    coupleId: string,
+    now: string,
+    limit: number,
+  ): Promise<readonly IngestionWork[]> {
+    const result = await this.client.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+        FilterExpression: 'nextAttemptAt <= :now',
+        ExpressionAttributeValues: {
+          ':pk': `COUPLE#${coupleId}`,
+          ':prefix': 'INGESTION_WORK#',
+          ':now': now,
+        },
+        Limit: limit,
+      }),
+    );
+    return (result.Items ?? []) as IngestionWork[];
+  }
+
+  public async removeIngestionWork(coupleId: string, memoryId: string): Promise<void> {
+    await this.client.send(
+      new DeleteCommand({ TableName: this.tableName, Key: workKey(coupleId, memoryId) }),
+    );
+  }
+
+  public async getIngestionBatch(coupleId: string): Promise<IngestionBatch | null> {
+    const result = await this.client.send(
+      new GetCommand({ TableName: this.tableName, Key: batchKey(coupleId), ConsistentRead: true }),
+    );
+    return (result.Item as IngestionBatch | undefined) ?? null;
+  }
+
+  public async saveIngestionBatch(coupleId: string, batch: IngestionBatch): Promise<void> {
+    await this.client.send(
+      new PutCommand({
+        TableName: this.tableName,
+        Item: { ...batchKey(coupleId), entityType: 'INGESTION_BATCH', ...batch },
+        ConditionExpression: 'attribute_not_exists(PK)',
+      }),
+    );
+  }
+
+  public async clearIngestionBatch(coupleId: string, jobId: string): Promise<void> {
+    await this.client.send(
+      new DeleteCommand({
+        TableName: this.tableName,
+        Key: batchKey(coupleId),
+        ConditionExpression: 'jobId = :jobId',
+        ExpressionAttributeValues: { ':jobId': jobId },
       }),
     );
   }

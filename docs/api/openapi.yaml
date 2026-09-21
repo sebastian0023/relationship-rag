@@ -106,13 +106,21 @@ paths:
           schema: { type: string, format: uuid }
       responses:
         '202': { description: Photo cleanup accepted }
-  /memories/{memoryId}/index:
+  /memories/{memoryId}/ingestion:
+    parameters:
+      - $ref: '#/components/parameters/MemoryId'
+    get:
+      operationId: getMemoryIngestion
+      responses:
+        '200': { description: Current ingestion status }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /memories/{memoryId}/reindex:
     parameters:
       - $ref: '#/components/parameters/MemoryId'
     post:
-      operationId: indexMemory
+      operationId: reindexMemory
       responses:
-        '202': { description: Indexing accepted }
+        '202': { description: Indexing accepted and status returned }
   /conversations:
     post:
       operationId: createConversation
@@ -213,6 +221,7 @@ components:
           type: array
           maxItems: 20
           items: { type: string, minLength: 1, maxLength: 40 }
+        category: { type: string, minLength: 1, maxLength: 40 }
         location: { type: string, minLength: 1, maxLength: 200 }
     UpdateMemoryRequest:
       allOf:

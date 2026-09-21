@@ -108,6 +108,18 @@ export const createMemoriesHandler = (
       if (memoryId === undefined || segments[0] !== 'memories') throw new ResourceNotFoundError();
       if (method === 'GET' && segments.length === 2)
         return json(200, await withViewUrls(service, coupleId, memoryId, mediaBucket, s3));
+      if (method === 'GET' && segments[2] === 'ingestion' && segments.length === 3)
+        return json(200, toIngestionResponse(await service.ingestion(coupleId, memoryId)));
+      if (method === 'POST' && segments[2] === 'reindex' && segments.length === 3)
+        return json(
+          202,
+          toIngestionResponse(
+            await service.ingestion(coupleId, memoryId).then(async () => {
+              await service.reindex(coupleId, memoryId);
+              return service.ingestion(coupleId, memoryId);
+            }),
+          ),
+        );
       if (method === 'PATCH' && segments.length === 2)
         return json(
           200,
@@ -188,6 +200,19 @@ export const createMemoriesHandler = (
     }
   };
 };
+
+const toIngestionResponse = (state: {
+  status: 'NOT_REQUESTED' | 'PENDING' | 'INDEXED' | 'FAILED';
+  requestedAt?: string;
+  indexedAt?: string;
+  failureCode?: string;
+}) => ({
+  status: state.status,
+  ...(state.requestedAt === undefined ? {} : { requestedAt: state.requestedAt }),
+  ...(state.indexedAt === undefined ? {} : { indexedAt: state.indexedAt }),
+  ...(state.failureCode === undefined ? {} : { failureCode: state.failureCode }),
+  retryable: state.status === 'FAILED' || state.status === 'NOT_REQUESTED',
+});
 
 const withViewUrls = async (
   service: MemoryService,

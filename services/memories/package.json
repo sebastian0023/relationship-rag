@@ -11,11 +11,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-agent": "^3.1136.0",
     "@aws-sdk/client-dynamodb": "^3.1017.0",
     "@aws-sdk/client-s3": "^3.1017.0",
     "@aws-sdk/lib-dynamodb": "^3.1017.0",
     "@aws-sdk/s3-presigned-post": "^3.1017.0",
     "@aws-sdk/s3-request-presigner": "^3.1017.0",
-    "sharp": "^0.34.5"
+    "sharp": "^0.35.4"
   }
 }

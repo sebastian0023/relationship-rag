@@ -41,6 +41,7 @@ new AiStack(app, `${prefix}-ai`, {
   ...stackProps,
   config,
   sourceBucket: data.ragSourceBucket,
+  applicationTable: data.applicationTable,
 });
 new ApiStack(app, `${prefix}-api`, {
   ...stackProps,

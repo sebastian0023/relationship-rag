@@ -69,6 +69,17 @@ Every feature follows specification-driven development, BDD, and TDD in that ord
 tests, then integrate through adapters and handlers. See [`AGENTS.md`](./AGENTS.md) for repository
 working agreements.
 
+## RAG ingestion
+
+Memory content is normalized into a private S3 source document and indexed by Bedrock Knowledge
+Bases with S3 Vectors and Titan Text Embeddings V2. New and edited memories become `PENDING`; the
+coordinator batches source changes every minute and records `INDEXED` or `FAILED` without logging
+private content. Existing memories remain unindexed until an explicit backfill.
+
+Run `APPLICATION_TABLE_NAME=<table> npm run rag:backfill -- --stage test --couple-id <id>` first
+to inspect a synthetic-stage backfill. Add `--confirm` only after reviewing the dry run. See
+[`docs/operations/phase-3-rollout.md`](./docs/operations/phase-3-rollout.md).
+
 ## Security
 
 The application is private by default. Never commit secrets, personal memories, photographs, tokens,

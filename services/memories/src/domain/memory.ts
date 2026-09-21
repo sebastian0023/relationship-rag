@@ -9,6 +9,7 @@ export interface Memory {
   readonly body: string;
   readonly locale: 'en' | 'es';
   readonly tags: readonly string[];
+  readonly category?: string;
   readonly location?: string;
   readonly createdAt: string;
   readonly updatedAt: string;

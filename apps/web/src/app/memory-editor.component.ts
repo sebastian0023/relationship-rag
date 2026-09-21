@@ -51,6 +51,12 @@ import { MemoriesApiService } from './memories-api.service.js';
           name="tags"
           [(ngModel)]="draft.tags" /></label
       ><label class="block"
+        >Category<input
+          class="mt-2 w-full rounded-xl bg-white/10 p-3"
+          name="category"
+          [(ngModel)]="draft.category"
+          maxlength="40" /></label
+      ><label class="block"
         >Language<select
           class="mt-2 w-full rounded-xl bg-white/10 p-3"
           name="locale"
@@ -79,6 +85,7 @@ export class MemoryEditorComponent {
     body: '',
     locale: 'en' as 'en' | 'es',
     tags: '',
+    category: '',
     location: '',
   };
   public constructor() {
@@ -100,6 +107,7 @@ export class MemoryEditorComponent {
       body: m.body,
       locale: m.locale,
       tags: m.tags.join(', '),
+      category: m.category ?? '',
       location: m.location ?? '',
     };
   }
@@ -116,6 +124,7 @@ export class MemoryEditorComponent {
         .map((tag) => tag.trim())
         .filter(Boolean),
       ...(this.draft.location.trim() === '' ? {} : { location: this.draft.location.trim() }),
+      ...(this.draft.category.trim() === '' ? {} : { category: this.draft.category.trim() }),
     };
     try {
       const result =
