@@ -12,6 +12,8 @@ import { AuthService } from './auth/auth.service.js';
         <div class="flex items-center gap-4 text-sm">
           <a routerLink="/app/timeline">Timeline</a>
           <a routerLink="/app/chat">Chat</a>
+          <a routerLink="/app/cards">Cards</a>
+          <a routerLink="/app/inbox">Inbox</a>
           <span>{{ auth.profile()?.displayName }} · {{ auth.profile()?.role }}</span>
           <button class="rounded-full border border-white/15 px-4 py-2" (click)="signOut()">
             Sign out

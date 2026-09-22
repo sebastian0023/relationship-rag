@@ -4,10 +4,8 @@ Relationship RAG is a private, serverless web application for two invited users.
 visual relationship timeline, grounded question answering over supplied memories, an AI-assisted
 card studio, and immediate or scheduled in-app delivery.
 
-The repository currently implements the Phase 0 foundation described in
-[`Relationship_RAG_Project_Blueprint.md`](./Relationship_RAG_Project_Blueprint.md). Product features
-are intentionally introduced as tested vertical slices, beginning with authentication and a
-text-only memory timeline.
+The repository implements the private timeline, grounded chat, card studio, and recoverable in-app
+delivery described in [`Relationship_RAG_Project_Blueprint.md`](./Relationship_RAG_Project_Blueprint.md).
 
 ## Architecture
 
@@ -85,3 +83,11 @@ to inspect a synthetic-stage backfill. Add `--confirm` only after reviewing the 
 The application is private by default. Never commit secrets, personal memories, photographs, tokens,
 generated user content, or production identifiers. Report vulnerabilities privately to the
 maintainer rather than opening a public issue.
+
+## Cards and delivery
+
+Cards are generated only from explicitly selected memories, remain editable until saved, and require
+a separate confirmation before delivery. Immediate delivery uses SQS; future delivery uses one-time
+EventBridge schedules. Both paths converge on an idempotent worker that creates one recipient inbox
+item. See [`docs/operations/phases-5-6-rollout.md`](./docs/operations/phases-5-6-rollout.md) for
+monitoring and recovery.

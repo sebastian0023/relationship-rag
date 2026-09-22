@@ -414,6 +414,9 @@ interface ApiStackProps extends RelationshipStackProps {
   readonly frontendDomain: string;
   readonly mediaBucket: s3.IBucket;
   readonly knowledgeBaseId: string;
+  readonly deliveryQueue: sqs.IQueue;
+  readonly deliveryDlq: sqs.IQueue;
+  readonly schedulerRole: iam.IRole;
 }
 
 export class ApiStack extends cdk.Stack {
@@ -619,6 +622,140 @@ export class ApiStack extends cdk.Stack {
       evaluationPeriods: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
+    const cardsLogGroup = new logs.LogGroup(this, 'CardsLogGroup', {
+      retention: props.config.retainData
+        ? logs.RetentionDays.THREE_MONTHS
+        : logs.RetentionDays.ONE_MONTH,
+      removalPolicy: removalPolicyFor(props.config),
+    });
+    const cardsFunction = new lambdaNodejs.NodejsFunction(this, 'CardsFunction', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      entry: resolve(process.cwd(), 'services/cards/src/handlers/cards.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(28),
+      memorySize: 1024,
+      tracing: lambda.Tracing.ACTIVE,
+      environment: {
+        APPLICATION_TABLE_NAME: props.applicationTable.tableName,
+        COUPLE_ID: props.config.coupleId,
+        DELIVERY_QUEUE_URL: props.deliveryQueue.queueUrl,
+        DELIVERY_QUEUE_ARN: props.deliveryQueue.queueArn,
+        SCHEDULER_ROLE_ARN: props.schedulerRole.roleArn,
+        SCHEDULER_DLQ_ARN: props.deliveryDlq.queueArn,
+      },
+      logGroup: cardsLogGroup,
+      bundling: { minify: true, sourceMap: true },
+    });
+    props.applicationTable.grantReadWriteData(cardsFunction);
+    props.deliveryQueue.grantSendMessages(cardsFunction);
+    cardsFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['bedrock:InvokeModel'],
+        resources: [
+          `arn:${cdk.Aws.PARTITION}:bedrock:${cdk.Aws.REGION}::foundation-model/amazon.nova-micro-v1:0`,
+        ],
+      }),
+    );
+    cardsFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['scheduler:CreateSchedule'],
+        resources: [
+          `arn:${cdk.Aws.PARTITION}:scheduler:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:schedule/default/delivery-*`,
+        ],
+      }),
+    );
+    cardsFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['iam:PassRole'],
+        resources: [props.schedulerRole.roleArn],
+        conditions: { StringEquals: { 'iam:PassedToService': 'scheduler.amazonaws.com' } },
+      }),
+    );
+    const cardsIntegration = new apigatewayv2.CfnIntegration(this, 'CardsIntegration', {
+      apiId: api.ref,
+      integrationType: 'AWS_PROXY',
+      integrationUri: cardsFunction.functionArn,
+      payloadFormatVersion: '2.0',
+      timeoutInMillis: 30_000,
+    });
+    for (const [id, routeKey] of [
+      ['CardRecipientsRoute', 'GET /cards/recipients'],
+      ['GenerateCardRoute', 'POST /cards/generate'],
+      ['CreateCardRoute', 'POST /cards'],
+      ['ListCardsRoute', 'GET /cards'],
+      ['GetCardRoute', 'GET /cards/{cardId}'],
+      ['UpdateCardRoute', 'PATCH /cards/{cardId}'],
+      ['DeleteCardRoute', 'DELETE /cards/{cardId}'],
+      ['SendCardRoute', 'POST /cards/{cardId}/send'],
+    ] as const)
+      new apigatewayv2.CfnRoute(this, id, {
+        apiId: api.ref,
+        routeKey,
+        authorizationType: 'JWT',
+        authorizerId: authorizer.ref,
+        authorizationScopes: ['relationship-rag/access'],
+        target: `integrations/${cardsIntegration.ref}`,
+      });
+    cardsFunction.addPermission('ApiGatewayCardsInvocation', {
+      principal: new iam.ServicePrincipal('apigateway.amazonaws.com'),
+      sourceArn: cdk.Stack.of(this).formatArn({
+        service: 'execute-api',
+        resource: `${api.ref}/*/*/*`,
+      }),
+    });
+    new cloudwatch.Alarm(this, 'CardGenerationFailureAlarm', {
+      metric: cardsFunction.metricErrors({ period: cdk.Duration.minutes(5) }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    new cloudwatch.Alarm(this, 'CardGenerationLatencyAlarm', {
+      metric: cardsFunction.metricDuration({ period: cdk.Duration.minutes(5) }),
+      threshold: 25_000,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    const inboxFunction = new lambdaNodejs.NodejsFunction(this, 'InboxFunction', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      entry: resolve(process.cwd(), 'services/notifications/src/handlers/inbox.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 256,
+      tracing: lambda.Tracing.ACTIVE,
+      environment: {
+        APPLICATION_TABLE_NAME: props.applicationTable.tableName,
+        COUPLE_ID: props.config.coupleId,
+      },
+      bundling: { minify: true, sourceMap: true },
+    });
+    props.applicationTable.grantReadWriteData(inboxFunction);
+    const inboxIntegration = new apigatewayv2.CfnIntegration(this, 'InboxIntegration', {
+      apiId: api.ref,
+      integrationType: 'AWS_PROXY',
+      integrationUri: inboxFunction.functionArn,
+      payloadFormatVersion: '2.0',
+    });
+    for (const [id, routeKey] of [
+      ['ListInboxRoute', 'GET /inbox'],
+      ['GetInboxRoute', 'GET /inbox/{cardId}'],
+      ['ReadInboxRoute', 'PATCH /inbox/{cardId}/read'],
+    ] as const)
+      new apigatewayv2.CfnRoute(this, id, {
+        apiId: api.ref,
+        routeKey,
+        authorizationType: 'JWT',
+        authorizerId: authorizer.ref,
+        authorizationScopes: ['relationship-rag/access'],
+        target: `integrations/${inboxIntegration.ref}`,
+      });
+    inboxFunction.addPermission('ApiGatewayInboxInvocation', {
+      principal: new iam.ServicePrincipal('apigateway.amazonaws.com'),
+      sourceArn: cdk.Stack.of(this).formatArn({
+        service: 'execute-api',
+        resource: `${api.ref}/*/*/*`,
+      }),
+    });
     new apigatewayv2.CfnStage(this, 'DefaultStage', {
       apiId: api.ref,
       stageName: '$default',
@@ -632,18 +769,137 @@ export class ApiStack extends cdk.Stack {
 export class MessagingStack extends cdk.Stack {
   public readonly deliveryQueue: sqs.Queue;
   public readonly deadLetterQueue: sqs.Queue;
+  public readonly schedulerRole: iam.Role;
 
-  public constructor(scope: Construct, id: string, props: RelationshipStackProps) {
+  public constructor(
+    scope: Construct,
+    id: string,
+    props: RelationshipStackProps & { readonly applicationTable: dynamodb.ITable },
+  ) {
     super(scope, id, props);
 
     this.deadLetterQueue = new sqs.Queue(this, 'DeliveryDeadLetterQueue', {
       encryption: sqs.QueueEncryption.SQS_MANAGED,
       retentionPeriod: cdk.Duration.days(14),
+      removalPolicy: removalPolicyFor(props.config),
     });
     this.deliveryQueue = new sqs.Queue(this, 'DeliveryQueue', {
       encryption: sqs.QueueEncryption.SQS_MANAGED,
       visibilityTimeout: cdk.Duration.seconds(60),
+      retentionPeriod: cdk.Duration.days(14),
       deadLetterQueue: { maxReceiveCount: 5, queue: this.deadLetterQueue },
+      removalPolicy: removalPolicyFor(props.config),
+    });
+
+    this.schedulerRole = new iam.Role(this, 'SchedulerDeliveryRole', {
+      assumedBy: new iam.ServicePrincipal('scheduler.amazonaws.com'),
+    });
+    this.deliveryQueue.grantSendMessages(this.schedulerRole);
+    this.deadLetterQueue.grantSendMessages(this.schedulerRole);
+
+    const worker = new lambdaNodejs.NodejsFunction(this, 'DeliveryWorkerFunction', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      entry: resolve(process.cwd(), 'services/notifications/src/handlers/process-delivery.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 256,
+      tracing: lambda.Tracing.ACTIVE,
+      environment: { APPLICATION_TABLE_NAME: props.applicationTable.tableName },
+      bundling: { minify: true, sourceMap: true },
+    });
+    worker.addEventSource(
+      new lambdaEventSources.SqsEventSource(this.deliveryQueue, {
+        batchSize: 10,
+        reportBatchItemFailures: true,
+      }),
+    );
+    props.applicationTable.grantReadWriteData(worker);
+
+    const failureArchiver = new lambdaNodejs.NodejsFunction(
+      this,
+      'DeliveryFailureArchiverFunction',
+      {
+        runtime: lambda.Runtime.NODEJS_22_X,
+        entry: resolve(
+          process.cwd(),
+          'services/notifications/src/handlers/archive-delivery-failure.ts',
+        ),
+        handler: 'handler',
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 256,
+        tracing: lambda.Tracing.ACTIVE,
+        environment: { APPLICATION_TABLE_NAME: props.applicationTable.tableName },
+        bundling: { minify: true, sourceMap: true },
+      },
+    );
+    failureArchiver.addEventSource(
+      new lambdaEventSources.SqsEventSource(this.deadLetterQueue, {
+        batchSize: 10,
+        reportBatchItemFailures: true,
+      }),
+    );
+    props.applicationTable.grantReadWriteData(failureArchiver);
+
+    const coordinator = new lambdaNodejs.NodejsFunction(
+      this,
+      'DeliveryDispatchCoordinatorFunction',
+      {
+        runtime: lambda.Runtime.NODEJS_22_X,
+        entry: resolve(process.cwd(), 'services/notifications/src/handlers/dispatch-deliveries.ts'),
+        handler: 'handler',
+        timeout: cdk.Duration.seconds(30),
+        memorySize: 256,
+        reservedConcurrentExecutions: 1,
+        tracing: lambda.Tracing.ACTIVE,
+        environment: {
+          APPLICATION_TABLE_NAME: props.applicationTable.tableName,
+          COUPLE_ID: props.config.coupleId,
+          DELIVERY_QUEUE_URL: this.deliveryQueue.queueUrl,
+          DELIVERY_QUEUE_ARN: this.deliveryQueue.queueArn,
+          SCHEDULER_ROLE_ARN: this.schedulerRole.roleArn,
+          SCHEDULER_DLQ_ARN: this.deadLetterQueue.queueArn,
+        },
+        bundling: { minify: true, sourceMap: true },
+      },
+    );
+    props.applicationTable.grantReadWriteData(coordinator);
+    this.deliveryQueue.grantSendMessages(coordinator);
+    coordinator.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['scheduler:CreateSchedule'],
+        resources: [
+          `arn:${cdk.Aws.PARTITION}:scheduler:${cdk.Aws.REGION}:${cdk.Aws.ACCOUNT_ID}:schedule/default/delivery-*`,
+        ],
+      }),
+    );
+    coordinator.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['iam:PassRole'],
+        resources: [this.schedulerRole.roleArn],
+        conditions: { StringEquals: { 'iam:PassedToService': 'scheduler.amazonaws.com' } },
+      }),
+    );
+    new events.Rule(this, 'DeliveryDispatchSchedule', {
+      schedule: events.Schedule.rate(cdk.Duration.minutes(1)),
+      targets: [new eventTargets.LambdaFunction(coordinator)],
+    });
+    new cloudwatch.Alarm(this, 'DeliveryWorkerErrorAlarm', {
+      metric: worker.metricErrors({ period: cdk.Duration.minutes(5) }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    new cloudwatch.Alarm(this, 'DeliveryDispatchErrorAlarm', {
+      metric: coordinator.metricErrors({ period: cdk.Duration.minutes(5) }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    new cloudwatch.Alarm(this, 'DeliveryBacklogAgeAlarm', {
+      metric: this.deliveryQueue.metricApproximateAgeOfOldestMessage(),
+      threshold: 300,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
 
     new cdk.CfnOutput(this, 'DeliveryQueueUrl', { value: this.deliveryQueue.queueUrl });

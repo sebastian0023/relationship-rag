@@ -11,3 +11,5 @@ ADRs are immutable once accepted. If a decision changes, add a new ADR that supe
 | 0003 | Bedrock Knowledge Bases with S3 Vectors | Accepted |
 | 0004 | Amazon Nova Micro as default generator  | Accepted |
 | 0005 | Cognito invite-only authentication      | Accepted |
+| 0006 | Batched Knowledge Base synchronization  | Accepted |
+| 0007 | Durable, idempotent card delivery       | Accepted |

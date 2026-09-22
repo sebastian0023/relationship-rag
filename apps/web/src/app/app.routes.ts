@@ -7,6 +7,10 @@ import { TimelineComponent } from './timeline.component.js';
 import { MemoryEditorComponent } from './memory-editor.component.js';
 import { MemoryDetailComponent } from './memory-detail.component.js';
 import { ChatComponent } from './chat.component.js';
+import { CardListComponent } from './card-list.component.js';
+import { CardEditorComponent } from './card-editor.component.js';
+import { InboxComponent } from './inbox.component.js';
+import { InboxDetailComponent } from './inbox-detail.component.js';
 
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'login' },
@@ -24,6 +28,11 @@ export const routes: Routes = [
       { path: 'timeline/:memoryId/edit', component: MemoryEditorComponent },
       { path: 'chat', component: ChatComponent },
       { path: 'chat/:conversationId', component: ChatComponent },
+      { path: 'cards', component: CardListComponent },
+      { path: 'cards/new', component: CardEditorComponent },
+      { path: 'cards/:cardId', component: CardEditorComponent },
+      { path: 'inbox', component: InboxComponent },
+      { path: 'inbox/:cardId', component: InboxDetailComponent },
     ],
   },
   { path: '**', redirectTo: 'app' },
