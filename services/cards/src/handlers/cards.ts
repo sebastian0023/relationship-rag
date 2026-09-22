@@ -22,7 +22,12 @@ import {
   DomainError,
   ResourceNotFoundError,
 } from '@relationship-rag/domain';
-import { createJsonLogger, type Logger } from '@relationship-rag/observability';
+import {
+  createJsonLogger,
+  createMetrics,
+  currentTraceId,
+  type Logger,
+} from '@relationship-rag/observability';
 import { DynamoDbCardRepository } from '../adapters/dynamodb-card-repository.js';
 import { BedrockCardGenerator } from '../adapters/bedrock-card-generator.js';
 import { AwsDeliveryDispatcher } from '../adapters/aws-delivery-dispatcher.js';
@@ -76,10 +81,27 @@ export const createCardsHandler = (
     { next: randomUUID },
     { now: () => new Date().toISOString() },
     new AwsDeliveryDispatcher(queueUrl, queueArn, schedulerRoleArn, schedulerDlqArn),
+    Number(process.env['AI_DEADLINE_MS'] ?? 24_000),
   );
+  const metrics = createMetrics('cards');
   const memberships = DynamoDBDocumentClient.from(new DynamoDBClient({}));
   return async (event: Event): Promise<Response> => {
     const correlationId = event.requestContext.requestId;
+    const startedAt = Date.now();
+    const respond = (statusCode: number, responseBody: unknown): Response => {
+      if (statusCode < 400)
+        logger.log('info', 'cards.request.completed', {
+          correlationId,
+          statusCode,
+          latencyMs: Date.now() - startedAt,
+          traceId: currentTraceId(),
+        });
+      const response = json(statusCode, responseBody);
+      return {
+        ...response,
+        headers: { ...response.headers, 'x-correlation-id': correlationId },
+      };
+    };
     try {
       const claims = event.requestContext.authorizer?.jwt?.claims ?? {};
       const identity = verifiedIdentitySchema.parse({
@@ -103,14 +125,14 @@ export const createCardsHandler = (
       const segments = event.rawPath.split('/').filter(Boolean);
       const body = (): unknown => JSON.parse(event.body ?? '{}');
       if (method === 'GET' && event.rawPath === '/cards/recipients')
-        return json(
+        return respond(
           200,
           cardRecipientsSchema.parse({
             items: await service.recipients(coupleId, identity.userId),
           }),
         );
       if (method === 'POST' && event.rawPath === '/cards/generate')
-        return json(
+        return respond(
           200,
           generatedCardDraftSchema.parse(
             await service.generate(
@@ -121,7 +143,7 @@ export const createCardsHandler = (
           ),
         );
       if (method === 'POST' && event.rawPath === '/cards')
-        return json(
+        return respond(
           201,
           cardSchema.parse(
             await service.save(coupleId, identity.userId, saveCardRequestSchema.parse(body())),
@@ -129,7 +151,7 @@ export const createCardsHandler = (
         );
       if (method === 'GET' && event.rawPath === '/cards') {
         const query = cardListQuerySchema.parse(event.queryStringParameters ?? {});
-        return json(
+        return respond(
           200,
           cardListSchema.parse(
             await service.list(coupleId, identity.userId, query.cursor, query.limit),
@@ -140,9 +162,9 @@ export const createCardsHandler = (
       if (rawCardId === undefined) throw new ResourceNotFoundError();
       const cardId = idSchema.parse(rawCardId);
       if (method === 'GET' && segments.length === 2)
-        return json(200, cardSchema.parse(await service.get(coupleId, identity.userId, cardId)));
+        return respond(200, cardSchema.parse(await service.get(coupleId, identity.userId, cardId)));
       if (method === 'PATCH' && segments.length === 2)
-        return json(
+        return respond(
           200,
           cardSchema.parse(
             await service.update(
@@ -158,10 +180,14 @@ export const createCardsHandler = (
         if (!Number.isInteger(version) || version < 1)
           throw new DomainError('INVALID_REQUEST', 'A valid version is required.');
         await service.delete(coupleId, identity.userId, cardId, version);
-        return { statusCode: 204, headers: { 'cache-control': 'no-store' }, body: '' };
+        return {
+          statusCode: 204,
+          headers: { 'cache-control': 'no-store', 'x-correlation-id': correlationId },
+          body: '',
+        };
       }
       if (method === 'POST' && segments[2] === 'send' && segments.length === 3)
-        return json(
+        return respond(
           202,
           sendCardResponseSchema.parse(
             await service.send(
@@ -189,7 +215,9 @@ export const createCardsHandler = (
       logger.log(status >= 500 ? 'error' : 'warn', 'cards.request.completed', {
         correlationId,
         statusCode: status,
+        traceId: currentTraceId(),
       });
+      if (status >= 500) metrics.put('DependencyFailure', 1);
       const error: ApiError = {
         code:
           status === 403
@@ -213,7 +241,7 @@ export const createCardsHandler = (
                   : 'Card service is temporarily unavailable.',
         correlationId,
       };
-      return json(status, error);
+      return respond(status, error);
     }
   };
 };

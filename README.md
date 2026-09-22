@@ -91,3 +91,10 @@ a separate confirmation before delivery. Immediate delivery uses SQS; future del
 EventBridge schedules. Both paths converge on an idempotent worker that creates one recipient inbox
 item. See [`docs/operations/phases-5-6-rollout.md`](./docs/operations/phases-5-6-rollout.md) for
 monitoring and recovery.
+
+## Operations
+
+Phase 7 adds privacy-safe structured telemetry, correlated API responses, bounded AI execution,
+stage budgets with operator notifications, and same-region recovery controls. See
+[`docs/operations/phase-7-operations.md`](./docs/operations/phase-7-operations.md) for alarm smoke
+tests, restore drills, incident response, and the manual billing-tag prerequisite.

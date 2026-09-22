@@ -1,4 +1,5 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal, viewChild } from '@angular/core';
+import type { ElementRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import type {
@@ -19,7 +20,7 @@ import { MemoriesApiService } from './memories-api.service.js';
       <form class="space-y-5 rounded-3xl border border-white/10 bg-white/5 p-7" (ngSubmit)="save()">
         <h1 class="font-display text-4xl">{{ saved() ? 'Edit card' : 'Create a card' }}</h1>
         @if (error()) {
-          <p class="rounded-xl bg-wine/35 p-4">{{ error() }}</p>
+          <p class="rounded-xl bg-wine/35 p-4" role="alert">{{ error() }}</p>
         }
         <label class="block text-sm"
           >Recipient<select
@@ -128,8 +129,10 @@ import { MemoriesApiService } from './memories-api.service.js';
           </button>
           @if (saved()?.status === 'DRAFT') {
             <button
+              #sendTrigger
               type="button"
-              (click)="showConfirmation.set(true)"
+              [disabled]="busy()"
+              (click)="openConfirmation(sendTrigger)"
               class="rounded-full border border-white/20 px-5 py-3"
             >
               Preview & send</button
@@ -158,11 +161,20 @@ import { MemoriesApiService } from './memories-api.service.js';
       </aside>
     </div>
     @if (showConfirmation() && saved(); as card) {
-      <div class="fixed inset-0 z-10 grid place-items-center bg-ink/85 p-5">
+      <div
+        class="fixed inset-0 z-10 grid place-items-center bg-ink/85 p-5"
+        (keydown.escape)="closeConfirmation()"
+        (keydown)="trapDialogFocus($event)"
+      >
         <section
+          #confirmationDialog
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-delivery-title"
+          tabindex="-1"
           class="max-h-[90vh] w-full max-w-xl overflow-auto rounded-3xl bg-paper p-8 text-ink"
         >
-          <h2 class="font-display text-4xl">Confirm delivery</h2>
+          <h2 id="confirm-delivery-title" class="font-display text-4xl">Confirm delivery</h2>
           <p class="mt-3 text-sm">
             To {{ card.recipientDisplayName }}. Sending locks this saved version.
           </p>
@@ -184,7 +196,9 @@ import { MemoriesApiService } from './memories-api.service.js';
               class="rounded-full bg-wine px-5 py-3 text-cream"
             >
               Confirm send</button
-            ><button (click)="showConfirmation.set(false)" class="px-5 py-3">Cancel</button>
+            ><button #confirmationCancel (click)="closeConfirmation()" class="px-5 py-3">
+              Cancel
+            </button>
           </div>
         </section>
       </div>
@@ -205,6 +219,10 @@ export class CardEditorComponent {
   protected readonly busy = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly showConfirmation = signal(false);
+  private readonly confirmationDialog = viewChild<ElementRef<HTMLElement>>('confirmationDialog');
+  private readonly confirmationCancel =
+    viewChild<ElementRef<HTMLButtonElement>>('confirmationCancel');
+  private confirmationOpener: HTMLElement | undefined;
   protected recipientUserId = '';
   protected occasion = '';
   protected tone: CardDto['tone'] = 'AFFECTIONATE';
@@ -277,9 +295,40 @@ export class CardEditorComponent {
         idempotencyKey: crypto.randomUUID(),
         ...(deliveryAt === undefined ? {} : { deliveryAt }),
       });
-      this.showConfirmation.set(false);
+      this.closeConfirmation();
       this.saved.set(await this.api.get(card.cardId));
     });
+  }
+  protected openConfirmation(opener: HTMLElement) {
+    if (this.busy()) return;
+    this.confirmationOpener = opener;
+    this.showConfirmation.set(true);
+    setTimeout(() => this.confirmationCancel()?.nativeElement.focus());
+  }
+  protected closeConfirmation() {
+    this.showConfirmation.set(false);
+    const opener = this.confirmationOpener;
+    setTimeout(() => opener?.focus());
+  }
+  protected trapDialogFocus(event: KeyboardEvent) {
+    if (event.key !== 'Tab') return;
+    const dialog = this.confirmationDialog()?.nativeElement;
+    if (dialog === undefined) return;
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (first === undefined || last === undefined) return;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   }
   private generationRequest() {
     return {

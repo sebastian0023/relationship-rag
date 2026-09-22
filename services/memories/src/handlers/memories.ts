@@ -16,7 +16,12 @@ import {
   DomainError,
   ResourceNotFoundError,
 } from '@relationship-rag/domain';
-import { createJsonLogger, type Logger } from '@relationship-rag/observability';
+import {
+  createJsonLogger,
+  createMetrics,
+  currentTraceId,
+  type Logger,
+} from '@relationship-rag/observability';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { DynamoDbMemoryRepository } from '../adapters/dynamodb-memory-repository.js';
@@ -66,8 +71,24 @@ export const createMemoriesHandler = (
   const service = new MemoryService(new DynamoDbMemoryRepository(tableName));
   const membershipClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
   const s3 = new S3Client({});
+  const metrics = createMetrics('memories');
   return async (event: Event): Promise<Response> => {
     const correlationId = event.requestContext.requestId;
+    const startedAt = Date.now();
+    const respond = (statusCode: number, responseBody: unknown): Response => {
+      if (statusCode < 400)
+        logger.log('info', 'memories.request.completed', {
+          correlationId,
+          statusCode,
+          latencyMs: Date.now() - startedAt,
+          traceId: currentTraceId(),
+        });
+      const response = json(statusCode, responseBody);
+      return {
+        ...response,
+        headers: { ...response.headers, 'x-correlation-id': correlationId },
+      };
+    };
     try {
       const claims = event.requestContext.authorizer?.jwt?.claims ?? {};
       const identity = verifiedIdentitySchema.parse({
@@ -93,10 +114,10 @@ export const createMemoriesHandler = (
       if (method === 'GET' && event.rawPath === '/timeline') {
         const query = timelineQuerySchema.parse(event.queryStringParameters ?? {});
         const timeline = await service.list(coupleId, query.cursor, query.limit);
-        return json(200, timeline);
+        return respond(200, timeline);
       }
       if (method === 'POST' && event.rawPath === '/memories')
-        return json(
+        return respond(
           201,
           await service.create(
             coupleId,
@@ -107,11 +128,11 @@ export const createMemoriesHandler = (
       const memoryId = segments[1];
       if (memoryId === undefined || segments[0] !== 'memories') throw new ResourceNotFoundError();
       if (method === 'GET' && segments.length === 2)
-        return json(200, await withViewUrls(service, coupleId, memoryId, mediaBucket, s3));
+        return respond(200, await withViewUrls(service, coupleId, memoryId, mediaBucket, s3));
       if (method === 'GET' && segments[2] === 'ingestion' && segments.length === 3)
-        return json(200, toIngestionResponse(await service.ingestion(coupleId, memoryId)));
+        return respond(200, toIngestionResponse(await service.ingestion(coupleId, memoryId)));
       if (method === 'POST' && segments[2] === 'reindex' && segments.length === 3)
-        return json(
+        return respond(
           202,
           toIngestionResponse(
             await service.ingestion(coupleId, memoryId).then(async () => {
@@ -121,7 +142,7 @@ export const createMemoriesHandler = (
           ),
         );
       if (method === 'PATCH' && segments.length === 2)
-        return json(
+        return respond(
           200,
           await service.update(
             coupleId,
@@ -131,7 +152,7 @@ export const createMemoriesHandler = (
         );
       if (method === 'DELETE' && segments.length === 2) {
         await service.delete(coupleId, memoryId);
-        return json(202, { accepted: true });
+        return respond(202, { accepted: true });
       }
       if (method === 'POST' && segments[2] === 'uploads') {
         const request = createUploadRequestSchema.parse(parseBody(event.body));
@@ -147,7 +168,7 @@ export const createMemoriesHandler = (
             ['eq', '$Content-Type', request.contentType],
           ],
         });
-        return json(201, {
+        return respond(201, {
           photoId: photo.photoId,
           ...post,
           expiresAt: new Date(Date.now() + 300_000).toISOString(),
@@ -155,7 +176,7 @@ export const createMemoriesHandler = (
       }
       if (method === 'DELETE' && segments[2] === 'photos' && segments[3] !== undefined) {
         await service.removePhoto(coupleId, memoryId, segments[3]);
-        return json(202, { accepted: true });
+        return respond(202, { accepted: true });
       }
       throw new ResourceNotFoundError();
     } catch (caught: unknown) {
@@ -172,7 +193,9 @@ export const createMemoriesHandler = (
       logger.log(status >= 500 ? 'error' : 'warn', 'memories.request.completed', {
         correlationId,
         statusCode: status,
+        traceId: currentTraceId(),
       });
+      if (status >= 500) metrics.put('DependencyFailure', 1);
       const error: ApiError = {
         code:
           status === 409
@@ -196,7 +219,7 @@ export const createMemoriesHandler = (
                   : 'Unable to complete this request.',
         correlationId,
       };
-      return json(status, error);
+      return respond(status, error);
     }
   };
 };

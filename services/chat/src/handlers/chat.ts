@@ -11,7 +11,12 @@ import {
   DomainError,
   ResourceNotFoundError,
 } from '@relationship-rag/domain';
-import { createJsonLogger, type Logger } from '@relationship-rag/observability';
+import {
+  createJsonLogger,
+  createMetrics,
+  currentTraceId,
+  type Logger,
+} from '@relationship-rag/observability';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { BedrockGroundedGenerator } from '../adapters/bedrock-grounded-generator.js';
@@ -71,10 +76,28 @@ export const createChatHandler = (
     generator,
     { next: randomUUID },
     { now: () => new Date().toISOString() },
+    0.5,
+    Number(process.env['AI_DEADLINE_MS'] ?? 24_000),
   );
+  const metrics = createMetrics('chat');
   const memberships = DynamoDBDocumentClient.from(new DynamoDBClient({}));
   return async (event: Event): Promise<Response> => {
     const correlationId = event.requestContext.requestId;
+    const startedAt = Date.now();
+    const respond = (statusCode: number, responseBody: unknown): Response => {
+      if (statusCode < 400)
+        logger.log('info', 'chat.request.completed', {
+          correlationId,
+          statusCode,
+          latencyMs: Date.now() - startedAt,
+          traceId: currentTraceId(),
+        });
+      const response = json(statusCode, responseBody);
+      return {
+        ...response,
+        headers: { ...response.headers, 'x-correlation-id': correlationId },
+      };
+    };
     try {
       const identity = verifiedIdentitySchema.parse({
         userId: event.requestContext.authorizer?.jwt?.claims?.['sub'],
@@ -107,9 +130,9 @@ export const createChatHandler = (
         throw new DomainError('INVALID_REQUEST', 'Invalid pagination request.');
       }
       if (method === 'POST' && event.rawPath === '/conversations')
-        return json(201, await service.create(coupleId, identity.userId));
+        return respond(201, await service.create(coupleId, identity.userId));
       if (method === 'GET' && event.rawPath === '/conversations')
-        return json(
+        return respond(
           200,
           conversationListSchema.parse(
             await service.list(coupleId, identity.userId, cursor, limit),
@@ -119,12 +142,12 @@ export const createChatHandler = (
         throw new ResourceNotFoundError();
       const conversationId = segments[1];
       if (method === 'GET' && segments.length === 2)
-        return json(
+        return respond(
           200,
           await service.get(coupleId, identity.userId, conversationId, cursor, limit),
         );
       if (method === 'POST' && segments[2] === 'messages' && segments.length === 3)
-        return json(
+        return respond(
           201,
           await service.message(
             coupleId,
@@ -148,7 +171,9 @@ export const createChatHandler = (
       logger.log(status >= 500 ? 'error' : 'warn', 'chat.request.completed', {
         correlationId,
         statusCode: status,
+        traceId: currentTraceId(),
       });
+      if (status >= 500) metrics.put('DependencyFailure', 1);
       const error: ApiError = {
         code:
           status === 409
@@ -172,7 +197,7 @@ export const createChatHandler = (
                   : 'The assistant is temporarily unavailable. Please retry.',
         correlationId,
       };
-      return json(status, error);
+      return respond(status, error);
     }
   };
 };

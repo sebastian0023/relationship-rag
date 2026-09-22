@@ -205,6 +205,50 @@ describe('ConversationService', () => {
     expect(repository.turns.at(-1)).toMatchObject({ status: 'FAILED', failureCode: 'TIMEOUT' });
   });
 
+  it('does not start another dependency call after the shared deadline', async () => {
+    const repository = new FakeConversations();
+    repository.turns.push({
+      turnId: '20202020-2020-4020-8020-202020202020',
+      requestId: '21212121-2121-4121-8121-212121212121',
+      question: 'Earlier question',
+      status: 'COMPLETED',
+      createdAt: clock.now(),
+      answer: 'Earlier answer',
+      citations: [],
+      abstained: true,
+    });
+    let retrievalCalled = false;
+    const service = new ConversationService(
+      repository,
+      {
+        retrieve: async () => {
+          retrievalCalled = true;
+          return [];
+        },
+      },
+      { generate: async () => ({ answer: '', citedMemoryIds: [], abstained: true }) },
+      {
+        resolve: async (question) => {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          return question;
+        },
+      },
+      { next: () => '22222222-2222-4222-8222-222222222223' },
+      clock,
+      0.5,
+      1,
+    );
+
+    await expect(
+      service.message('couple', 'user', '23232323-2323-4232-8232-232323232323', {
+        requestId: '24242424-2424-4242-8242-242424242424',
+        question: 'Follow up?',
+      }),
+    ).rejects.toMatchObject({ name: 'TimeoutError' });
+    expect(retrievalCalled).toBe(false);
+    expect(repository.turns.at(-1)).toMatchObject({ status: 'FAILED', failureCode: 'TIMEOUT' });
+  });
+
   it('rejects fabricated citations and stores a dependency failure', async () => {
     const repository = new FakeConversations();
     const service = new ConversationService(

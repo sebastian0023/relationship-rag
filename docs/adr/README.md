@@ -13,3 +13,4 @@ ADRs are immutable once accepted. If a decision changes, add a new ADR that supe
 | 0005 | Cognito invite-only authentication      | Accepted |
 | 0006 | Batched Knowledge Base synchronization  | Accepted |
 | 0007 | Durable, idempotent card delivery       | Accepted |
+| 0008 | Privacy-safe operations and recovery    | Accepted |

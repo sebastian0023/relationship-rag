@@ -35,6 +35,7 @@ export class ConversationService {
     private readonly ids: IdGenerator,
     private readonly clock: Clock,
     private readonly minimumRelevance = 0.5,
+    private readonly executionDeadlineMs = 24_000,
   ) {}
 
   public async create(coupleId: string, userId: string): Promise<ConversationSummary> {
@@ -98,21 +99,35 @@ export class ConversationService {
       createdAt: existing?.createdAt ?? this.clock.now(),
     };
     await this.conversations.reserveTurn(coupleId, userId, conversationId, pending);
+    const deadlineAt = Date.now() + this.executionDeadlineMs;
     try {
       const history = await this.conversations.completedTurns(coupleId, userId, conversationId, 6);
       const resolvedQuestion =
         history.length === 0
           ? request.question
-          : await this.rewriter.resolve(request.question, history);
+          : await this.rewriter.resolve(
+              request.question,
+              history,
+              this.remainingSignal(deadlineAt),
+            );
       const evidence = (
-        await this.retriever.retrieve(coupleId, resolvedQuestion, request.filters)
+        await this.retriever.retrieve(
+          coupleId,
+          resolvedQuestion,
+          request.filters,
+          this.remainingSignal(deadlineAt),
+        )
       ).filter((memory) => memory.relevance >= this.minimumRelevance);
       const completed =
         evidence.length === 0
           ? this.completed(pending, abstention(request.question), [], true)
           : this.fromGeneration(
               pending,
-              await this.generator.generate(request.question, evidence),
+              await this.generator.generate(
+                request.question,
+                evidence,
+                this.remainingSignal(deadlineAt),
+              ),
               evidence,
             );
       await this.conversations.completeTurn(coupleId, userId, conversationId, completed);
@@ -137,6 +152,12 @@ export class ConversationService {
       await this.conversations.failTurn(coupleId, userId, conversationId, failed);
       throw error;
     }
+  }
+
+  private remainingSignal(deadlineAt: number): AbortSignal {
+    const remaining = deadlineAt - Date.now();
+    if (remaining <= 0) throw new DOMException('AI execution deadline exceeded.', 'TimeoutError');
+    return AbortSignal.timeout(remaining);
   }
 
   private completed(

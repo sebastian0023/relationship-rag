@@ -49,12 +49,13 @@ export class BedrockMemoryRetriever implements MemoryRetriever {
     private readonly memories: CanonicalMemoryLookup,
     client?: BedrockAgentRuntimeClient,
   ) {
-    this.client = client ?? new BedrockAgentRuntimeClient({});
+    this.client = client ?? new BedrockAgentRuntimeClient({ maxAttempts: 2 });
   }
   public async retrieve(
     coupleId: string,
     query: string,
     filters?: MemoryRetrievalFilters,
+    signal?: AbortSignal,
   ): Promise<readonly RetrievedMemory[]> {
     const result = await this.client.send(
       new RetrieveCommand({
@@ -67,6 +68,7 @@ export class BedrockMemoryRetriever implements MemoryRetriever {
           },
         },
       }),
+      signal === undefined ? undefined : { abortSignal: signal },
     );
     const unique = new Set<string>();
     const verified: RetrievedMemory[] = [];

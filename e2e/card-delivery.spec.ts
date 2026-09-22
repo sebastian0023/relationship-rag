@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 
 const now = '2026-09-21T12:00:00.000Z';
 const memoryId = '11111111-1111-4111-8111-111111111111';
@@ -129,6 +130,12 @@ for (const deliveryMode of ['immediate', 'scheduled'] as const)
     });
 
     await page.goto('/app/cards/new');
+    const accessibility = await new AxeBuilder({ page }).analyze();
+    expect(
+      accessibility.violations.filter(
+        (violation) => violation.impact === 'critical' || violation.impact === 'serious',
+      ),
+    ).toEqual([]);
     await page.getByLabel('Occasion').fill('Anniversary');
     await page.getByText('2025-05-01 · Beach day').click();
     await page.getByRole('button', { name: 'Generate suggestion' }).click();
@@ -144,6 +151,7 @@ for (const deliveryMode of ['immediate', 'scheduled'] as const)
     await page.getByRole('button', { name: 'Save draft' }).click();
     await page.getByRole('button', { name: 'Preview & send' }).click();
     await expect(page.getByRole('heading', { name: 'Confirm delivery' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Cancel' })).toBeFocused();
     if (deliveryMode === 'scheduled')
       await page.getByLabel('Schedule for later (optional)').fill('2026-09-22T12:00');
     await page.getByRole('button', { name: 'Confirm send' }).click();

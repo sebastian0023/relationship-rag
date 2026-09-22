@@ -56,7 +56,7 @@ import { MemoriesApiService } from './memories-api.service.js';
       </div>
       <button class="mt-10 text-sm text-rose" (click)="remove()">Delete this memory</button>
     } @else if (error()) {
-      <p>{{ error() }}</p>
+      <p role="alert">{{ error() }}</p>
     } @else {
       <p>Loading memory…</p>
     }

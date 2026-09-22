@@ -17,6 +17,7 @@
     "@aws-sdk/lib-dynamodb": "^3.1017.0",
     "@aws-sdk/s3-presigned-post": "^3.1017.0",
     "@aws-sdk/s3-request-presigner": "^3.1017.0",
+    "@relationship-rag/observability": "*",
     "sharp": "^0.35.4"
   }
 }

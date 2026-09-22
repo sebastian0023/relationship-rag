@@ -2,7 +2,10 @@ openapi: 3.1.0
 info:
   title: Relationship RAG API
   version: 0.1.0
-  description: Private API contract. Schemas are implemented in packages/contracts.
+  description: >-
+    Private API contract. Schemas are implemented in packages/contracts. Application responses
+    expose X-Correlation-Id; API Gateway may return a payload-independent 429 when stage or AI-route
+    throttles are exceeded.
 servers:
   - url: https://api.example.invalid
     description: Placeholder replaced by stage outputs
@@ -158,6 +161,7 @@ paths:
               $ref: '#/components/schemas/CreateMessageRequest'
       responses:
         '201': { description: Grounded assistant response }
+        '429': { $ref: '#/components/responses/Throttled' }
   /cards/generate:
     post:
       operationId: generateCard
@@ -172,6 +176,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/GeneratedCardDraft' }
+        '429': { $ref: '#/components/responses/Throttled' }
   /cards/recipients:
     get:
       operationId: listCardRecipients
@@ -394,29 +399,47 @@ components:
         code: { type: string }
         message: { type: string }
         correlationId: { type: string }
+  headers:
+    CorrelationId:
+      description: Opaque API Gateway request identifier for privacy-safe support correlation
+      schema: { type: string }
   responses:
     BadRequest:
       description: Request validation failed
+      headers:
+        X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
     Unauthorized:
       description: Authentication is required
+      headers:
+        X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
     Forbidden:
       description: The authenticated identity is not an active member
+      headers:
+        X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
     InternalError:
       description: The profile service could not complete the request
+      headers:
+        X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
     NotFound:
       description: Resource does not exist within the authenticated tenancy
+      headers:
+        X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/ApiError' }
+    Throttled:
+      description: Stage or AI-route request rate exceeded
+      headers:
+        X-Correlation-Id: { $ref: '#/components/headers/CorrelationId' }

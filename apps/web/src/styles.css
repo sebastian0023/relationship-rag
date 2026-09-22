@@ -26,16 +26,69 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: clip;
+}
+
 body {
   margin: 0;
   min-width: 320px;
+  overflow-wrap: anywhere;
+}
+
+:focus-visible {
+  outline: 3px solid #f4b7bd;
+  outline-offset: 3px;
+}
+
+button:disabled,
+input:disabled,
+textarea:disabled,
+select:disabled {
+  cursor: not-allowed;
+}
+
+.skip-link {
+  position: fixed;
+  left: 1rem;
+  top: 1rem;
+  z-index: 50;
+  transform: translateY(-200%);
+  border-radius: 9999px;
+  background: #f7f0e8;
+  color: #241c20;
+  padding: 0.75rem 1rem;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .glow {
   position: absolute;
-  width: 32rem;
-  height: 32rem;
+  width: 18rem;
+  height: 18rem;
   border-radius: 9999px;
   background: rgb(120 62 75 / 35%);
   filter: blur(110px);
+}
+
+@media (min-width: 640px) {
+  .glow {
+    width: 32rem;
+    height: 32rem;
+  }
 }

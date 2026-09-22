@@ -9,7 +9,7 @@ import {
   type ApiError,
 } from '@relationship-rag/contracts';
 import { AuthorizationError, DomainError, ResourceNotFoundError } from '@relationship-rag/domain';
-import { createJsonLogger } from '@relationship-rag/observability';
+import { createJsonLogger, createMetrics, currentTraceId } from '@relationship-rag/observability';
 import { DynamoDbDeliveryRepository } from '../adapters/dynamodb-delivery-repository.js';
 import { DeliveryService } from '../application/delivery.js';
 
@@ -48,8 +48,24 @@ export const createInboxHandler = (tableName: string, coupleId: string) => {
   const service = new DeliveryService(new DynamoDbDeliveryRepository(tableName));
   const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
   const logger = createJsonLogger();
+  const metrics = createMetrics('inbox');
   return async (event: Event): Promise<Response> => {
     const correlationId = event.requestContext.requestId;
+    const startedAt = Date.now();
+    const respond = (statusCode: number, responseBody: unknown): Response => {
+      if (statusCode < 400)
+        logger.log('info', 'inbox.request.completed', {
+          correlationId,
+          statusCode,
+          latencyMs: Date.now() - startedAt,
+          traceId: currentTraceId(),
+        });
+      const response = json(statusCode, responseBody);
+      return {
+        ...response,
+        headers: { ...response.headers, 'x-correlation-id': correlationId },
+      };
+    };
     try {
       const claims = event.requestContext.authorizer?.jwt?.claims ?? {};
       const identity = verifiedIdentitySchema.parse({
@@ -73,7 +89,7 @@ export const createInboxHandler = (tableName: string, coupleId: string) => {
       const segments = event.rawPath.split('/').filter(Boolean);
       if (method === 'GET' && event.rawPath === '/inbox') {
         const query = cardListQuerySchema.parse(event.queryStringParameters ?? {});
-        return json(
+        return respond(
           200,
           inboxListSchema.parse(
             await service.listInbox(identity.userId, query.cursor, query.limit),
@@ -84,9 +100,9 @@ export const createInboxHandler = (tableName: string, coupleId: string) => {
       if (rawCardId === undefined) throw new ResourceNotFoundError();
       const cardId = idSchema.parse(rawCardId);
       if (method === 'GET' && segments.length === 2)
-        return json(200, inboxItemSchema.parse(await service.getInbox(identity.userId, cardId)));
+        return respond(200, inboxItemSchema.parse(await service.getInbox(identity.userId, cardId)));
       if (method === 'PATCH' && segments[2] === 'read' && segments.length === 3)
-        return json(200, inboxItemSchema.parse(await service.markRead(identity.userId, cardId)));
+        return respond(200, inboxItemSchema.parse(await service.markRead(identity.userId, cardId)));
       throw new ResourceNotFoundError();
     } catch (caught) {
       const status =
@@ -102,7 +118,9 @@ export const createInboxHandler = (tableName: string, coupleId: string) => {
       logger.log(status >= 500 ? 'error' : 'warn', 'inbox.request.completed', {
         correlationId,
         statusCode: status,
+        traceId: currentTraceId(),
       });
+      if (status >= 500) metrics.put('DependencyFailure', 1);
       const error: ApiError = {
         code:
           status === 403
@@ -122,7 +140,7 @@ export const createInboxHandler = (tableName: string, coupleId: string) => {
                 : 'Unable to load the inbox.',
         correlationId,
       };
-      return json(status, error);
+      return respond(status, error);
     }
   };
 };

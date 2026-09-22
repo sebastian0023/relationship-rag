@@ -43,7 +43,7 @@ import { AuthService } from './auth/auth.service.js';
               Sign in with your invitation
             </button>
             @if (auth.state() === 'unavailable') {
-              <span class="text-sm text-rose"
+              <span class="text-sm text-rose" role="status"
                 >Sign-in configuration is not available in this environment.</span
               >
             }
@@ -54,13 +54,13 @@ import { AuthService } from './auth/auth.service.js';
             class="rotate-2 rounded-[2rem] border border-white/10 bg-paper p-3 text-ink shadow-2xl shadow-black/30"
           >
             <div class="rounded-[1.45rem] border border-ink/10 p-7 sm:p-9">
-              <p class="text-xs font-semibold uppercase tracking-[0.24em] text-wine/60">
+              <p class="text-xs font-semibold uppercase tracking-[0.24em] text-wine">
                 May 14 · Puerto Vallarta
               </p>
               <h2 class="mt-5 font-display text-4xl leading-tight">
                 The trip where everything slowed down.
               </h2>
-              <p class="mt-5 text-sm leading-6 text-ink/60">
+              <p class="mt-5 text-sm leading-6 text-ink/75">
                 Morning coffee by the water, the long walk after sunset, and the story we still tell
                 the same way.
               </p>
@@ -73,7 +73,7 @@ import { AuthService } from './auth/auth.service.js';
             </div>
           </div>
           <div
-            class="absolute -bottom-7 -left-5 -z-10 h-full w-full -rotate-3 rounded-[2rem] border border-rose/20"
+            class="absolute -bottom-7 -left-5 -z-10 hidden h-full w-full -rotate-3 rounded-[2rem] border border-rose/20 sm:block"
           ></div>
         </aside>
       </section>

@@ -14,8 +14,11 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import * as lambdaEventSources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as s3n from 'aws-cdk-lib/aws-s3-notifications';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as s3vectors from 'aws-cdk-lib/aws-s3vectors';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import { resolve } from 'node:path';
@@ -34,6 +37,47 @@ interface AuthStackProps extends RelationshipStackProps {
 const removalPolicyFor = (config: StageConfig): cdk.RemovalPolicy =>
   config.retainData ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
 
+const logRetentionFor = (config: StageConfig): logs.RetentionDays => {
+  if (config.logRetentionDays === 14) return logs.RetentionDays.TWO_WEEKS;
+  if (config.logRetentionDays === 90) return logs.RetentionDays.THREE_MONTHS;
+  throw new Error(`Unsupported log retention: ${config.logRetentionDays} days.`);
+};
+
+const functionLogGroup = (scope: Construct, id: string, config: StageConfig): logs.LogGroup =>
+  new logs.LogGroup(scope, `${id}LogGroup`, {
+    retention: logRetentionFor(config),
+    removalPolicy: removalPolicyFor(config),
+  });
+
+const addFunctionHealthAlarms = (
+  scope: Construct,
+  id: string,
+  fn: lambda.IFunction,
+  latencyThresholdMs: number,
+  includeErrorAlarm = true,
+): void => {
+  const common = {
+    evaluationPeriods: 1,
+    treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+  };
+  if (includeErrorAlarm)
+    new cloudwatch.Alarm(scope, `${id}ErrorAlarm`, {
+      ...common,
+      metric: fn.metricErrors({ period: cdk.Duration.minutes(5) }),
+      threshold: 1,
+    });
+  new cloudwatch.Alarm(scope, `${id}ThrottleAlarm`, {
+    ...common,
+    metric: fn.metricThrottles({ period: cdk.Duration.minutes(5) }),
+    threshold: 1,
+  });
+  new cloudwatch.Alarm(scope, `${id}LatencyAlarm`, {
+    ...common,
+    metric: fn.metricDuration({ period: cdk.Duration.minutes(5), statistic: 'p95' }),
+    threshold: latencyThresholdMs,
+  });
+};
+
 export class DataStack extends cdk.Stack {
   public readonly applicationTable: dynamodb.Table;
   public readonly mediaBucket: s3.Bucket;
@@ -50,7 +94,13 @@ export class DataStack extends cdk.Stack {
       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.AWS_MANAGED,
-      pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: props.config.retainData },
+      pointInTimeRecoverySpecification:
+        props.config.stage === 'dev'
+          ? { pointInTimeRecoveryEnabled: false }
+          : {
+              pointInTimeRecoveryEnabled: true,
+              recoveryPeriodInDays: props.config.backupRetentionDays,
+            },
       deletionProtection: props.config.deletionProtection,
       removalPolicy,
     });
@@ -86,6 +136,12 @@ export class DataStack extends cdk.Stack {
       new s3n.SqsDestination(this.mediaProcessingQueue),
       { prefix: 'staging/' },
     );
+    new cloudwatch.Alarm(this, 'MediaProcessingDeadLetterQueueAlarm', {
+      metric: this.mediaProcessingDlq.metricApproximateNumberOfMessagesVisible(),
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
     const photoProcessor = new lambdaNodejs.NodejsFunction(this, 'PhotoProcessorFunction', {
       runtime: lambda.Runtime.NODEJS_22_X,
       entry: resolve(process.cwd(), 'services/memories/src/handlers/process-photo.ts'),
@@ -93,9 +149,11 @@ export class DataStack extends cdk.Stack {
       timeout: cdk.Duration.minutes(2),
       memorySize: 1024,
       tracing: lambda.Tracing.ACTIVE,
+      logGroup: functionLogGroup(this, 'PhotoProcessor', props.config),
       environment: {
         APPLICATION_TABLE_NAME: this.applicationTable.tableName,
         MEDIA_BUCKET_NAME: this.mediaBucket.bucketName,
+        STAGE: props.config.stage,
       },
       bundling: { minify: true, sourceMap: true, nodeModules: ['sharp'] },
     });
@@ -104,6 +162,7 @@ export class DataStack extends cdk.Stack {
     );
     this.applicationTable.grantReadWriteData(photoProcessor);
     this.mediaBucket.grantReadWrite(photoProcessor);
+    addFunctionHealthAlarms(this, 'PhotoProcessor', photoProcessor, 110_000);
     this.ragSourceBucket = this.privateBucket('RagSourceBucket', props.config, removalPolicy);
 
     new cdk.CfnOutput(this, 'ApplicationTableName', { value: this.applicationTable.tableName });
@@ -120,9 +179,13 @@ export class DataStack extends cdk.Stack {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
-      versioned: config.retainData,
+      versioned: config.stage !== 'dev',
       autoDeleteObjects: !config.retainData,
       removalPolicy,
+      lifecycleRules:
+        config.stage === 'dev'
+          ? []
+          : [{ noncurrentVersionExpiration: cdk.Duration.days(config.backupRetentionDays) }],
     });
   }
 }
@@ -259,8 +322,24 @@ interface AiStackProps extends RelationshipStackProps {
 export class AiStack extends cdk.Stack {
   public readonly knowledgeBaseId: string;
   public readonly dataSourceId: string;
+  public readonly inferenceProfileArn: string;
   public constructor(scope: Construct, id: string, props: AiStackProps) {
     super(scope, id, props);
+    const foundationModelArn = `arn:${cdk.Aws.PARTITION}:bedrock:${cdk.Aws.REGION}::foundation-model/amazon.nova-micro-v1:0`;
+    const inferenceProfile = new bedrock.CfnApplicationInferenceProfile(
+      this,
+      'GenerationInferenceProfile',
+      {
+        inferenceProfileName: `relationship-rag-${props.config.stage}-generation`,
+        description: 'Attributed chat and card generation for Relationship RAG',
+        modelSource: { copyFrom: foundationModelArn },
+        tags: [
+          { key: 'Application', value: 'relationship-rag' },
+          { key: 'Environment', value: props.config.stage },
+        ],
+      },
+    );
+    this.inferenceProfileArn = inferenceProfile.attrInferenceProfileArn;
     const vectorBucket = new s3vectors.CfnVectorBucket(this, 'VectorBucket', {
       vectorBucketName: `relationship-rag-${props.config.stage}-${cdk.Aws.ACCOUNT_ID}-vectors`,
     });
@@ -354,12 +433,14 @@ export class AiStack extends cdk.Stack {
       memorySize: 512,
       reservedConcurrentExecutions: 1,
       tracing: lambda.Tracing.ACTIVE,
+      logGroup: functionLogGroup(this, 'IngestionCoordinator', props.config),
       environment: {
         APPLICATION_TABLE_NAME: props.applicationTable.tableName,
         RAG_SOURCE_BUCKET_NAME: props.sourceBucket.bucketName,
         COUPLE_ID: props.config.coupleId,
         KNOWLEDGE_BASE_ID: knowledgeBase.attrKnowledgeBaseId,
         DATA_SOURCE_ID: dataSource.attrDataSourceId,
+        STAGE: props.config.stage,
       },
       bundling: { minify: true, sourceMap: true },
     });
@@ -378,6 +459,7 @@ export class AiStack extends cdk.Stack {
         resources: [knowledgeBase.attrKnowledgeBaseArn],
       }),
     );
+    addFunctionHealthAlarms(this, 'IngestionCoordinator', coordinator, 55_000, false);
     new cloudwatch.Alarm(this, 'IngestionDeadLetterQueueAlarm', {
       metric: ingestionDlq.metricApproximateNumberOfMessagesVisible(),
       threshold: 1,
@@ -401,7 +483,10 @@ export class AiStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'SourceBucketArn', { value: props.sourceBucket.bucketArn });
     new cdk.CfnOutput(this, 'KnowledgeBaseId', { value: this.knowledgeBaseId });
     new cdk.CfnOutput(this, 'DataSourceId', { value: this.dataSourceId });
-    new cdk.CfnOutput(this, 'FoundationModel', { value: 'amazon.nova-micro-v1:0' });
+    new cdk.CfnOutput(this, 'FoundationModel', { value: foundationModelArn });
+    new cdk.CfnOutput(this, 'GenerationInferenceProfileArn', {
+      value: this.inferenceProfileArn,
+    });
     new cdk.CfnOutput(this, 'EmbeddingModel', { value: 'amazon.titan-embed-text-v2:0' });
   }
 }
@@ -414,6 +499,7 @@ interface ApiStackProps extends RelationshipStackProps {
   readonly frontendDomain: string;
   readonly mediaBucket: s3.IBucket;
   readonly knowledgeBaseId: string;
+  readonly inferenceProfileArn: string;
   readonly deliveryQueue: sqs.IQueue;
   readonly deliveryDlq: sqs.IQueue;
   readonly schedulerRole: iam.IRole;
@@ -423,11 +509,25 @@ export class ApiStack extends cdk.Stack {
   public constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
+    const adotInstrumentation: lambda.AdotInstrumentationConfig = {
+      layerVersion: lambda.AdotLayerVersion.fromJavaScriptSdkLayerVersion(
+        lambda.AdotLambdaLayerJavaScriptSdkVersion.V1_30_0,
+      ),
+      execWrapper: lambda.AdotLambdaExecWrapper.PROXY_HANDLER,
+    };
+    // ADOT replaces the handler export at runtime; cloning esbuild's getters makes it writable.
+    const adotBundling: lambdaNodejs.BundlingOptions = {
+      minify: true,
+      sourceMap: true,
+      footer: 'module.exports = { ...module.exports };',
+    };
+
     const api = new apigatewayv2.CfnApi(this, 'HttpApi', {
       name: `relationship-rag-${props.config.stage}`,
       protocolType: 'HTTP',
       corsConfiguration: {
         allowHeaders: ['authorization', 'content-type', 'x-correlation-id'],
+        exposeHeaders: ['x-correlation-id'],
         allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
         allowOrigins:
           props.config.stage === 'dev'
@@ -446,9 +546,7 @@ export class ApiStack extends cdk.Stack {
       name: 'cognito-jwt',
     });
     const getMeLogGroup = new logs.LogGroup(this, 'GetMeLogGroup', {
-      retention: props.config.retainData
-        ? logs.RetentionDays.THREE_MONTHS
-        : logs.RetentionDays.ONE_MONTH,
+      retention: logRetentionFor(props.config),
       removalPolicy: removalPolicyFor(props.config),
     });
     const getMeFunction = new lambdaNodejs.NodejsFunction(this, 'GetMeFunction', {
@@ -458,14 +556,17 @@ export class ApiStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(10),
       memorySize: 256,
       tracing: lambda.Tracing.ACTIVE,
+      adotInstrumentation,
       environment: {
         APPLICATION_TABLE_NAME: props.applicationTable.tableName,
         COUPLE_ID: props.config.coupleId,
+        STAGE: props.config.stage,
       },
       logGroup: getMeLogGroup,
-      bundling: { minify: true, sourceMap: true },
+      bundling: adotBundling,
     });
     props.applicationTable.grantReadData(getMeFunction);
+    addFunctionHealthAlarms(this, 'GetMe', getMeFunction, 2_000);
     const getMeIntegration = new apigatewayv2.CfnIntegration(this, 'GetMeIntegration', {
       apiId: api.ref,
       integrationType: 'AWS_PROXY',
@@ -488,9 +589,7 @@ export class ApiStack extends cdk.Stack {
       target: `integrations/${getMeIntegration.ref}`,
     });
     const memoriesLogGroup = new logs.LogGroup(this, 'MemoriesLogGroup', {
-      retention: props.config.retainData
-        ? logs.RetentionDays.THREE_MONTHS
-        : logs.RetentionDays.ONE_MONTH,
+      retention: logRetentionFor(props.config),
       removalPolicy: removalPolicyFor(props.config),
     });
     const memoriesFunction = new lambdaNodejs.NodejsFunction(this, 'MemoriesFunction', {
@@ -500,16 +599,19 @@ export class ApiStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(15),
       memorySize: 512,
       tracing: lambda.Tracing.ACTIVE,
+      adotInstrumentation,
       environment: {
         APPLICATION_TABLE_NAME: props.applicationTable.tableName,
         COUPLE_ID: props.config.coupleId,
         MEDIA_BUCKET_NAME: props.mediaBucket.bucketName,
+        STAGE: props.config.stage,
       },
       logGroup: memoriesLogGroup,
-      bundling: { minify: true, sourceMap: true },
+      bundling: adotBundling,
     });
     props.applicationTable.grantReadWriteData(memoriesFunction);
     props.mediaBucket.grantReadWrite(memoriesFunction);
+    addFunctionHealthAlarms(this, 'Memories', memoriesFunction, 2_000);
     const memoriesIntegration = new apigatewayv2.CfnIntegration(this, 'MemoriesIntegration', {
       apiId: api.ref,
       integrationType: 'AWS_PROXY',
@@ -544,9 +646,7 @@ export class ApiStack extends cdk.Stack {
       }),
     });
     const chatLogGroup = new logs.LogGroup(this, 'ChatLogGroup', {
-      retention: props.config.retainData
-        ? logs.RetentionDays.THREE_MONTHS
-        : logs.RetentionDays.ONE_MONTH,
+      retention: logRetentionFor(props.config),
       removalPolicy: removalPolicyFor(props.config),
     });
     const chatFunction = new lambdaNodejs.NodejsFunction(this, 'ChatFunction', {
@@ -555,14 +655,19 @@ export class ApiStack extends cdk.Stack {
       handler: 'handler',
       timeout: cdk.Duration.seconds(28),
       memorySize: 1024,
+      reservedConcurrentExecutions: props.config.aiReservedConcurrency,
       tracing: lambda.Tracing.ACTIVE,
+      adotInstrumentation,
       environment: {
         APPLICATION_TABLE_NAME: props.applicationTable.tableName,
         COUPLE_ID: props.config.coupleId,
         KNOWLEDGE_BASE_ID: props.knowledgeBaseId,
+        AI_DEADLINE_MS: String(props.config.aiDeadlineMs),
+        MODEL_ID: props.inferenceProfileArn,
+        STAGE: props.config.stage,
       },
       logGroup: chatLogGroup,
-      bundling: { minify: true, sourceMap: true },
+      bundling: adotBundling,
     });
     props.applicationTable.grantReadWriteData(chatFunction);
     chatFunction.addToRolePolicy(
@@ -573,10 +678,12 @@ export class ApiStack extends cdk.Stack {
         ],
       }),
     );
+    addFunctionHealthAlarms(this, 'Chat', chatFunction, 20_000, false);
     chatFunction.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['bedrock:InvokeModel'],
         resources: [
+          props.inferenceProfileArn,
           `arn:${cdk.Aws.PARTITION}:bedrock:${cdk.Aws.REGION}::foundation-model/amazon.nova-micro-v1:0`,
         ],
       }),
@@ -616,16 +723,8 @@ export class ApiStack extends cdk.Stack {
       evaluationPeriods: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    new cloudwatch.Alarm(this, 'ChatLatencyAlarm', {
-      metric: chatFunction.metricDuration({ period: cdk.Duration.minutes(5) }),
-      threshold: 25_000,
-      evaluationPeriods: 1,
-      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-    });
     const cardsLogGroup = new logs.LogGroup(this, 'CardsLogGroup', {
-      retention: props.config.retainData
-        ? logs.RetentionDays.THREE_MONTHS
-        : logs.RetentionDays.ONE_MONTH,
+      retention: logRetentionFor(props.config),
       removalPolicy: removalPolicyFor(props.config),
     });
     const cardsFunction = new lambdaNodejs.NodejsFunction(this, 'CardsFunction', {
@@ -634,7 +733,9 @@ export class ApiStack extends cdk.Stack {
       handler: 'handler',
       timeout: cdk.Duration.seconds(28),
       memorySize: 1024,
+      reservedConcurrentExecutions: props.config.aiReservedConcurrency,
       tracing: lambda.Tracing.ACTIVE,
+      adotInstrumentation,
       environment: {
         APPLICATION_TABLE_NAME: props.applicationTable.tableName,
         COUPLE_ID: props.config.coupleId,
@@ -642,9 +743,12 @@ export class ApiStack extends cdk.Stack {
         DELIVERY_QUEUE_ARN: props.deliveryQueue.queueArn,
         SCHEDULER_ROLE_ARN: props.schedulerRole.roleArn,
         SCHEDULER_DLQ_ARN: props.deliveryDlq.queueArn,
+        AI_DEADLINE_MS: String(props.config.aiDeadlineMs),
+        MODEL_ID: props.inferenceProfileArn,
+        STAGE: props.config.stage,
       },
       logGroup: cardsLogGroup,
-      bundling: { minify: true, sourceMap: true },
+      bundling: adotBundling,
     });
     props.applicationTable.grantReadWriteData(cardsFunction);
     props.deliveryQueue.grantSendMessages(cardsFunction);
@@ -652,10 +756,12 @@ export class ApiStack extends cdk.Stack {
       new iam.PolicyStatement({
         actions: ['bedrock:InvokeModel'],
         resources: [
+          props.inferenceProfileArn,
           `arn:${cdk.Aws.PARTITION}:bedrock:${cdk.Aws.REGION}::foundation-model/amazon.nova-micro-v1:0`,
         ],
       }),
     );
+    addFunctionHealthAlarms(this, 'Cards', cardsFunction, 20_000, false);
     cardsFunction.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ['scheduler:CreateSchedule'],
@@ -709,12 +815,6 @@ export class ApiStack extends cdk.Stack {
       evaluationPeriods: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    new cloudwatch.Alarm(this, 'CardGenerationLatencyAlarm', {
-      metric: cardsFunction.metricDuration({ period: cdk.Duration.minutes(5) }),
-      threshold: 25_000,
-      evaluationPeriods: 1,
-      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
-    });
 
     const inboxFunction = new lambdaNodejs.NodejsFunction(this, 'InboxFunction', {
       runtime: lambda.Runtime.NODEJS_22_X,
@@ -723,13 +823,17 @@ export class ApiStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(10),
       memorySize: 256,
       tracing: lambda.Tracing.ACTIVE,
+      adotInstrumentation,
+      logGroup: functionLogGroup(this, 'Inbox', props.config),
       environment: {
         APPLICATION_TABLE_NAME: props.applicationTable.tableName,
         COUPLE_ID: props.config.coupleId,
+        STAGE: props.config.stage,
       },
-      bundling: { minify: true, sourceMap: true },
+      bundling: adotBundling,
     });
     props.applicationTable.grantReadWriteData(inboxFunction);
+    addFunctionHealthAlarms(this, 'Inbox', inboxFunction, 2_000);
     const inboxIntegration = new apigatewayv2.CfnIntegration(this, 'InboxIntegration', {
       apiId: api.ref,
       integrationType: 'AWS_PROXY',
@@ -756,10 +860,78 @@ export class ApiStack extends cdk.Stack {
         resource: `${api.ref}/*/*/*`,
       }),
     });
+    const accessLogGroup = new logs.LogGroup(this, 'ApiAccessLogGroup', {
+      retention: logRetentionFor(props.config),
+      removalPolicy: removalPolicyFor(props.config),
+    });
+    accessLogGroup.addToResourcePolicy(
+      new iam.PolicyStatement({
+        principals: [new iam.ServicePrincipal('apigateway.amazonaws.com')],
+        actions: ['logs:CreateLogStream', 'logs:PutLogEvents'],
+        resources: [`${accessLogGroup.logGroupArn}:*`],
+      }),
+    );
     new apigatewayv2.CfnStage(this, 'DefaultStage', {
       apiId: api.ref,
       stageName: '$default',
       autoDeploy: true,
+      defaultRouteSettings: {
+        throttlingRateLimit: props.config.apiRateLimit,
+        throttlingBurstLimit: props.config.apiBurstLimit,
+        detailedMetricsEnabled: true,
+      },
+      routeSettings: {
+        'POST /cards/generate': {
+          throttlingRateLimit: 0.2,
+          throttlingBurstLimit: 2,
+          detailedMetricsEnabled: true,
+        },
+        'POST /conversations/{conversationId}/messages': {
+          throttlingRateLimit: 0.2,
+          throttlingBurstLimit: 2,
+          detailedMetricsEnabled: true,
+        },
+      },
+      accessLogSettings: {
+        destinationArn: accessLogGroup.logGroupArn,
+        format: JSON.stringify({
+          requestId: '$context.requestId',
+          routeKey: '$context.routeKey',
+          status: '$context.status',
+          integrationStatus: '$context.integration.status',
+          responseLatency: '$context.responseLatency',
+          stage: props.config.stage,
+          service: 'api',
+        }),
+      },
+    });
+
+    const apiDimensions = { ApiId: api.ref, Stage: '$default' };
+    new cloudwatch.Alarm(this, 'ApiServerErrorAlarm', {
+      metric: new cloudwatch.Metric({
+        namespace: 'AWS/ApiGateway',
+        metricName: '5xx',
+        dimensionsMap: apiDimensions,
+        period: cdk.Duration.minutes(5),
+        statistic: 'Sum',
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    const throttleMetric = new logs.MetricFilter(this, 'ApiThrottleMetric', {
+      logGroup: accessLogGroup,
+      filterPattern: logs.FilterPattern.stringValue('$.status', '=', '429'),
+      metricNamespace: 'RelationshipRag',
+      metricName: 'ApiThrottle',
+      metricValue: '1',
+      defaultValue: 0,
+    });
+    new cloudwatch.Alarm(this, 'ApiThrottleAlarm', {
+      metric: throttleMetric.metric({ period: cdk.Duration.minutes(5), statistic: 'Sum' }),
+      threshold: 10,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
 
     new cdk.CfnOutput(this, 'ApiEndpoint', { value: api.attrApiEndpoint });
@@ -804,7 +976,11 @@ export class MessagingStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(10),
       memorySize: 256,
       tracing: lambda.Tracing.ACTIVE,
-      environment: { APPLICATION_TABLE_NAME: props.applicationTable.tableName },
+      logGroup: functionLogGroup(this, 'DeliveryWorker', props.config),
+      environment: {
+        APPLICATION_TABLE_NAME: props.applicationTable.tableName,
+        STAGE: props.config.stage,
+      },
       bundling: { minify: true, sourceMap: true },
     });
     worker.addEventSource(
@@ -814,6 +990,7 @@ export class MessagingStack extends cdk.Stack {
       }),
     );
     props.applicationTable.grantReadWriteData(worker);
+    addFunctionHealthAlarms(this, 'DeliveryWorker', worker, 8_000, false);
 
     const failureArchiver = new lambdaNodejs.NodejsFunction(
       this,
@@ -828,7 +1005,11 @@ export class MessagingStack extends cdk.Stack {
         timeout: cdk.Duration.seconds(10),
         memorySize: 256,
         tracing: lambda.Tracing.ACTIVE,
-        environment: { APPLICATION_TABLE_NAME: props.applicationTable.tableName },
+        logGroup: functionLogGroup(this, 'DeliveryFailureArchiver', props.config),
+        environment: {
+          APPLICATION_TABLE_NAME: props.applicationTable.tableName,
+          STAGE: props.config.stage,
+        },
         bundling: { minify: true, sourceMap: true },
       },
     );
@@ -839,6 +1020,7 @@ export class MessagingStack extends cdk.Stack {
       }),
     );
     props.applicationTable.grantReadWriteData(failureArchiver);
+    addFunctionHealthAlarms(this, 'DeliveryFailureArchiver', failureArchiver, 8_000);
 
     const coordinator = new lambdaNodejs.NodejsFunction(
       this,
@@ -851,6 +1033,7 @@ export class MessagingStack extends cdk.Stack {
         memorySize: 256,
         reservedConcurrentExecutions: 1,
         tracing: lambda.Tracing.ACTIVE,
+        logGroup: functionLogGroup(this, 'DeliveryDispatchCoordinator', props.config),
         environment: {
           APPLICATION_TABLE_NAME: props.applicationTable.tableName,
           COUPLE_ID: props.config.coupleId,
@@ -858,11 +1041,13 @@ export class MessagingStack extends cdk.Stack {
           DELIVERY_QUEUE_ARN: this.deliveryQueue.queueArn,
           SCHEDULER_ROLE_ARN: this.schedulerRole.roleArn,
           SCHEDULER_DLQ_ARN: this.deadLetterQueue.queueArn,
+          STAGE: props.config.stage,
         },
         bundling: { minify: true, sourceMap: true },
       },
     );
     props.applicationTable.grantReadWriteData(coordinator);
+    addFunctionHealthAlarms(this, 'DeliveryDispatchCoordinator', coordinator, 25_000, false);
     this.deliveryQueue.grantSendMessages(coordinator);
     coordinator.addToRolePolicy(
       new iam.PolicyStatement({
@@ -910,40 +1095,145 @@ export class MessagingStack extends cdk.Stack {
 }
 
 interface ObservabilityStackProps extends RelationshipStackProps {
-  readonly deliveryQueue: sqs.IQueue;
-  readonly deadLetterQueue: sqs.IQueue;
+  readonly alertEmail?: string;
 }
 
 export class ObservabilityStack extends cdk.Stack {
+  public readonly alarmTopic: sns.Topic;
+
   public constructor(scope: Construct, id: string, props: ObservabilityStackProps) {
     super(scope, id, props);
+
+    this.alarmTopic = new sns.Topic(this, 'AlarmTopic', {
+      displayName: `Relationship RAG ${props.config.stage} alerts`,
+      masterKey: kms.Alias.fromAliasName(this, 'SnsKey', 'alias/aws/sns'),
+    });
+    this.alarmTopic.addToResourcePolicy(
+      new iam.PolicyStatement({
+        principals: [new iam.ServicePrincipal('budgets.amazonaws.com')],
+        actions: ['sns:Publish'],
+        resources: [this.alarmTopic.topicArn],
+        conditions: { StringEquals: { 'aws:SourceAccount': cdk.Aws.ACCOUNT_ID } },
+      }),
+    );
+    if (props.alertEmail !== undefined)
+      this.alarmTopic.addSubscription(new snsSubscriptions.EmailSubscription(props.alertEmail));
 
     const dashboard = new cloudwatch.Dashboard(this, 'Dashboard', {
       dashboardName: `relationship-rag-${props.config.stage}`,
     });
     dashboard.addWidgets(
       new cloudwatch.GraphWidget({
-        title: 'Delivery queues',
+        title: 'Handled failures',
         left: [
-          props.deliveryQueue.metricApproximateNumberOfMessagesVisible(),
-          props.deadLetterQueue.metricApproximateNumberOfMessagesVisible(),
+          new cloudwatch.Metric({
+            namespace: 'RelationshipRag',
+            metricName: 'DependencyFailure',
+            dimensionsMap: { Stage: props.config.stage, Service: 'chat' },
+            statistic: 'Sum',
+          }),
+          new cloudwatch.Metric({
+            namespace: 'RelationshipRag',
+            metricName: 'RecordFailure',
+            dimensionsMap: { Stage: props.config.stage, Service: 'delivery' },
+            statistic: 'Sum',
+          }),
         ],
       }),
+      new cloudwatch.GraphWidget({
+        title: 'AI usage',
+        left: ['chat', 'cards'].flatMap((service) => [
+          new cloudwatch.Metric({
+            namespace: 'RelationshipRag',
+            metricName: 'ModelInputTokens',
+            dimensionsMap: { Stage: props.config.stage, Service: service },
+            statistic: 'Sum',
+          }),
+          new cloudwatch.Metric({
+            namespace: 'RelationshipRag',
+            metricName: 'ModelOutputTokens',
+            dimensionsMap: { Stage: props.config.stage, Service: service },
+            statistic: 'Sum',
+          }),
+        ]),
+      }),
     );
-    new cloudwatch.Alarm(this, 'DeadLetterQueueAlarm', {
-      metric: props.deadLetterQueue.metricApproximateNumberOfMessagesVisible(),
+    for (const [id, service, metricName, threshold] of [
+      ['ChatHandledDependencyFailureAlarm', 'chat', 'DependencyFailure', 1],
+      ['CardHandledDependencyFailureAlarm', 'cards', 'DependencyFailure', 1],
+      ['DeliveryRecordFailureAlarm', 'delivery', 'RecordFailure', 1],
+      ['DeliveryTerminalFailureAlarm', 'delivery', 'TerminalFailure', 1],
+      ['IngestionRecordFailureAlarm', 'ingestion', 'RecordFailure', 1],
+      ['MediaRecordFailureAlarm', 'media', 'RecordFailure', 1],
+      ['IdentityDependencyFailureAlarm', 'identity', 'DependencyFailure', 1],
+      ['MemoriesDependencyFailureAlarm', 'memories', 'DependencyFailure', 1],
+      ['InboxDependencyFailureAlarm', 'inbox', 'DependencyFailure', 1],
+    ] as const) {
+      new cloudwatch.Alarm(this, id, {
+        metric: new cloudwatch.Metric({
+          namespace: 'RelationshipRag',
+          metricName,
+          dimensionsMap: { Stage: props.config.stage, Service: service },
+          statistic: 'Sum',
+          period: cdk.Duration.minutes(5),
+        }),
+        threshold,
+        evaluationPeriods: 1,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+    }
+    new cloudwatch.Alarm(this, 'IngestionHeartbeatAlarm', {
+      metric: new cloudwatch.Metric({
+        namespace: 'RelationshipRag',
+        metricName: 'CoordinatorHeartbeat',
+        dimensionsMap: { Stage: props.config.stage, Service: 'ingestion' },
+        statistic: 'Sum',
+        period: cdk.Duration.minutes(5),
+      }),
       threshold: 1,
-      evaluationPeriods: 1,
-      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+      evaluationPeriods: 2,
+      treatMissingData: cloudwatch.TreatMissingData.BREACHING,
     });
+    const subscriber = { address: this.alarmTopic.topicArn, subscriptionType: 'SNS' };
     new budgets.CfnBudget(this, 'MonthlyBudget', {
       budget: {
         budgetName: `relationship-rag-${props.config.stage}`,
         budgetType: 'COST',
         timeUnit: 'MONTHLY',
         budgetLimit: { amount: props.config.monthlyBudgetUsd, unit: 'USD' },
-        costFilters: { TagKeyValue: [`user:Application$relationship-rag`] },
+        costFilters: { TagKeyValue: [`user:CostScope$relationship-rag-${props.config.stage}`] },
       },
+      notificationsWithSubscribers: [
+        {
+          notification: {
+            comparisonOperator: 'GREATER_THAN',
+            notificationType: 'ACTUAL',
+            threshold: 80,
+            thresholdType: 'PERCENTAGE',
+          },
+          subscribers: [subscriber],
+        },
+        {
+          notification: {
+            comparisonOperator: 'GREATER_THAN',
+            notificationType: 'ACTUAL',
+            threshold: 100,
+            thresholdType: 'PERCENTAGE',
+          },
+          subscribers: [subscriber],
+        },
+        {
+          notification: {
+            comparisonOperator: 'GREATER_THAN',
+            notificationType: 'FORECASTED',
+            threshold: 100,
+            thresholdType: 'PERCENTAGE',
+          },
+          subscribers: [subscriber],
+        },
+      ],
     });
+    new cdk.CfnOutput(this, 'AlarmTopicArn', { value: this.alarmTopic.topicArn });
   }
 }

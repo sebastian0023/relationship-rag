@@ -10,6 +10,11 @@ export interface StageConfig {
   readonly retainData: boolean;
   readonly logRetentionDays: number;
   readonly monthlyBudgetUsd: number;
+  readonly apiRateLimit: number;
+  readonly apiBurstLimit: number;
+  readonly aiReservedConcurrency: number;
+  readonly aiDeadlineMs: number;
+  readonly backupRetentionDays: number;
 }
 
 const isStageName = (value: string): value is StageName =>
@@ -58,7 +63,24 @@ export const loadStageConfig = (stage: string): StageConfig => {
     retainData: requireBoolean(record, 'retainData'),
     logRetentionDays: requirePositiveNumber(record, 'logRetentionDays'),
     monthlyBudgetUsd: requirePositiveNumber(record, 'monthlyBudgetUsd'),
+    apiRateLimit: requirePositiveNumber(record, 'apiRateLimit'),
+    apiBurstLimit: requirePositiveNumber(record, 'apiBurstLimit'),
+    aiReservedConcurrency: requirePositiveNumber(record, 'aiReservedConcurrency'),
+    aiDeadlineMs: requirePositiveNumber(record, 'aiDeadlineMs'),
+    backupRetentionDays: requirePositiveNumber(record, 'backupRetentionDays'),
   };
+
+  for (const [key, value] of [
+    ['apiBurstLimit', config.apiBurstLimit],
+    ['aiReservedConcurrency', config.aiReservedConcurrency],
+    ['aiDeadlineMs', config.aiDeadlineMs],
+    ['backupRetentionDays', config.backupRetentionDays],
+  ] as const) {
+    if (!Number.isInteger(value)) throw new Error(`Stage config field ${key} must be an integer.`);
+  }
+
+  if (config.aiDeadlineMs >= 28_000)
+    throw new Error('AI deadline must leave time before the Lambda timeout.');
 
   if (stage === 'prod' && (!config.deletionProtection || !config.retainData)) {
     throw new Error('Production must enable deletion protection and data retention.');

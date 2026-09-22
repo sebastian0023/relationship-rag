@@ -18,6 +18,7 @@ export interface CardGenerator {
   generate(
     request: GenerateCardRequest,
     memories: readonly SelectedMemory[],
+    signal?: AbortSignal,
   ): Promise<GeneratedCardDraft>;
 }
 

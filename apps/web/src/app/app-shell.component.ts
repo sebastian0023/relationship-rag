@@ -7,20 +7,26 @@ import { AuthService } from './auth/auth.service.js';
   imports: [RouterLink, RouterOutlet],
   template: `
     <main class="min-h-screen bg-ink px-6 py-7 text-cream lg:px-10">
-      <nav class="mx-auto flex max-w-7xl items-center justify-between">
+      <a class="skip-link" href="#main-content">Skip to main content</a>
+      <nav
+        aria-label="Primary navigation"
+        class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4"
+      >
         <span class="font-display text-xl">Our story<span class="text-rose">.</span></span>
-        <div class="flex items-center gap-4 text-sm">
+        <div class="flex flex-wrap items-center gap-4 text-sm">
           <a routerLink="/app/timeline">Timeline</a>
           <a routerLink="/app/chat">Chat</a>
           <a routerLink="/app/cards">Cards</a>
           <a routerLink="/app/inbox">Inbox</a>
-          <span>{{ auth.profile()?.displayName }} · {{ auth.profile()?.role }}</span>
+          <span class="hidden sm:inline"
+            >{{ auth.profile()?.displayName }} · {{ auth.profile()?.role }}</span
+          >
           <button class="rounded-full border border-white/15 px-4 py-2" (click)="signOut()">
             Sign out
           </button>
         </div>
       </nav>
-      <router-outlet />
+      <div id="main-content" tabindex="-1"><router-outlet /></div>
     </main>
   `,
 })
