@@ -40,6 +40,15 @@ jobs:
       - name: Validate grounded chat evaluation dataset
         run: npm run rag:chat-eval
 
+      - name: Validate card grounding evaluation
+        run: npm run rag:card-eval
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run card and inbox journey
+        run: npm run test:e2e -- --project=chromium
+
       - name: Build
         run: npm run build
 

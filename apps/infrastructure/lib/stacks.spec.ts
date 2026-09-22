@@ -2,7 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, it } from 'vitest';
 import type { StageConfig } from './config.js';
-import { AiStack, ApiStack, AuthStack, DataStack, EdgeStack } from './stacks.js';
+import { AiStack, ApiStack, AuthStack, DataStack, EdgeStack, MessagingStack } from './stacks.js';
 
 const dev: StageConfig = {
   stage: 'dev',
@@ -52,6 +52,10 @@ describe('privacy infrastructure', () => {
       config: dev,
       frontendDomain: 'frontend.example.test',
     });
+    const messaging = new MessagingStack(app, 'messaging-test', {
+      config: dev,
+      applicationTable: data.applicationTable,
+    });
     const template = Template.fromStack(
       new ApiStack(app, 'api-test', {
         config: dev,
@@ -61,6 +65,10 @@ describe('privacy infrastructure', () => {
         issuer: auth.issuer,
         frontendDomain: 'frontend.example.test',
         mediaBucket: data.mediaBucket,
+        knowledgeBaseId: 'kb-test',
+        deliveryQueue: messaging.deliveryQueue,
+        deliveryDlq: messaging.deadLetterQueue,
+        schedulerRole: messaging.schedulerRole,
       }),
     );
 
@@ -72,6 +80,33 @@ describe('privacy infrastructure', () => {
       RouteKey: 'GET /me',
       AuthorizationType: 'JWT',
       AuthorizationScopes: ['relationship-rag/access'],
+    });
+  });
+
+  it('uses retryable, idempotent messaging resources for card delivery', () => {
+    const app = new cdk.App();
+    const data = new DataStack(app, 'data-test', { config: dev });
+    const template = Template.fromStack(
+      new MessagingStack(app, 'messaging-test', {
+        config: dev,
+        applicationTable: data.applicationTable,
+      }),
+    );
+    template.hasResourceProperties('AWS::SQS::Queue', {
+      MessageRetentionPeriod: 1209600,
+      RedrivePolicy: Match.objectLike({ maxReceiveCount: 5 }),
+      VisibilityTimeout: 60,
+    });
+    template.hasResourceProperties('AWS::Lambda::EventSourceMapping', {
+      FunctionResponseTypes: ['ReportBatchItemFailures'],
+    });
+    template.hasResourceProperties('AWS::Events::Rule', { ScheduleExpression: 'rate(1 minute)' });
+    template.hasResourceProperties('AWS::IAM::Role', {
+      AssumeRolePolicyDocument: Match.objectLike({
+        Statement: Match.arrayWith([
+          Match.objectLike({ Principal: { Service: 'scheduler.amazonaws.com' } }),
+        ]),
+      }),
     });
   });
 

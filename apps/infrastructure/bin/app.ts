@@ -43,6 +43,11 @@ const ai = new AiStack(app, `${prefix}-ai`, {
   sourceBucket: data.ragSourceBucket,
   applicationTable: data.applicationTable,
 });
+const messaging = new MessagingStack(app, `${prefix}-messaging`, {
+  ...stackProps,
+  config,
+  applicationTable: data.applicationTable,
+});
 new ApiStack(app, `${prefix}-api`, {
   ...stackProps,
   config,
@@ -53,8 +58,10 @@ new ApiStack(app, `${prefix}-api`, {
   frontendDomain: edge.distribution.domainName,
   mediaBucket: data.mediaBucket,
   knowledgeBaseId: ai.knowledgeBaseId,
+  deliveryQueue: messaging.deliveryQueue,
+  deliveryDlq: messaging.deadLetterQueue,
+  schedulerRole: messaging.schedulerRole,
 });
-const messaging = new MessagingStack(app, `${prefix}-messaging`, { ...stackProps, config });
 new ObservabilityStack(app, `${prefix}-observability`, {
   ...stackProps,
   config,

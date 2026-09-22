@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "selected-beach-memory",
+      "selectedMemoryIds": ["11111111-1111-4111-8111-111111111111"],
+      "draft": {
+        "title": "Our beach day",
+        "body": "I still smile about our beach day.",
+        "citedMemoryIds": ["11111111-1111-4111-8111-111111111111"]
+      },
+      "unsupportedFacts": []
+    },
+    {
+      "id": "generic-no-memory",
+      "selectedMemoryIds": [],
+      "draft": {
+        "title": "For you",
+        "body": "I hope this brings a smile to your day.",
+        "citedMemoryIds": []
+      },
+      "unsupportedFacts": []
+    }
+  ]
+}

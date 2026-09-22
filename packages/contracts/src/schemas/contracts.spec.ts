@@ -4,6 +4,8 @@ import {
   groundedAnswerSchema,
   createMessageRequestSchema,
   publicRuntimeConfigSchema,
+  generatedCardDraftSchema,
+  sendCardRequestSchema,
   verifiedIdentitySchema,
 } from '../index.js';
 
@@ -28,6 +30,36 @@ describe('createMemoryRequestSchema', () => {
         locale: 'en',
       }),
     ).toThrow();
+  });
+});
+
+describe('card contracts', () => {
+  it('requires explicit confirmation and a saved version before sending', () => {
+    expect(() =>
+      sendCardRequestSchema.parse({
+        confirmed: false,
+        version: 1,
+        idempotencyKey: '1234567890123456',
+      }),
+    ).toThrow();
+    expect(
+      sendCardRequestSchema.parse({
+        confirmed: true,
+        version: 2,
+        idempotencyKey: '1234567890123456',
+      }),
+    ).toMatchObject({ confirmed: true, version: 2 });
+  });
+
+  it('rejects duplicate model citations', () => {
+    const memoryId = '11111111-1111-4111-8111-111111111111';
+    expect(() =>
+      generatedCardDraftSchema.parse({
+        title: 'For you',
+        body: 'A memory.',
+        citedMemoryIds: [memoryId, memoryId],
+      }),
+    ).toThrow('Citations must be unique.');
   });
 });
 

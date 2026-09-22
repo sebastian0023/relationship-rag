@@ -23,13 +23,17 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "synth": "npm run --workspace @relationship-rag/infrastructure build && cdk synth",
     "rag:backfill": "node scripts/rag-backfill.mjs",
     "rag:chat-eval": "node scripts/chat-eval.mjs",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run rag:chat-eval && npm run build && npm run synth"
+    "rag:card-eval": "node scripts/card-eval.mjs",
+    "delivery:replay": "node scripts/replay-delivery.mjs",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run rag:chat-eval && npm run rag:card-eval && npm run build && npm run synth"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@playwright/test": "^1.63.0",
     "@types/node": "26.6.2",
     "@vitest/coverage-v8": "5.0.1",
     "eslint": "10.11.0",

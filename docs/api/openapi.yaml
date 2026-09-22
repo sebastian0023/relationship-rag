@@ -161,26 +161,85 @@ paths:
   /cards/generate:
     post:
       operationId: generateCard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GenerateCardRequest' }
       responses:
-        '200': { description: Generated editable draft }
+        '200':
+          description: Generated unsaved editable draft
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GeneratedCardDraft' }
+  /cards/recipients:
+    get:
+      operationId: listCardRecipients
+      responses:
+        '200': { description: Other active couple members eligible to receive a card }
   /cards:
+    get:
+      operationId: listCards
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200': { description: Sender-owned drafts and delivery history }
     post:
       operationId: saveCard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SaveCardRequest' }
       responses:
         '201': { description: Saved card draft }
   /cards/{cardId}:
+    get:
+      operationId: getCard
+      parameters:
+        - $ref: '#/components/parameters/CardId'
+      responses:
+        '200': { description: Sender-owned card }
+        '404': { $ref: '#/components/responses/NotFound' }
     patch:
       operationId: updateCard
       parameters:
         - $ref: '#/components/parameters/CardId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateCardRequest' }
       responses:
         '200': { description: Updated card }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: Stale version or immutable card }
+    delete:
+      operationId: deleteCard
+      parameters:
+        - $ref: '#/components/parameters/CardId'
+        - name: version
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '204': { description: Draft deleted }
+        '409': { description: Stale version or immutable card }
   /cards/{cardId}/send:
     post:
       operationId: sendCard
       parameters:
         - $ref: '#/components/parameters/CardId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SendCardRequest' }
       responses:
         '202': { description: Delivery accepted }
   /inbox:
@@ -195,6 +254,14 @@ paths:
         - $ref: '#/components/parameters/CardId'
       responses:
         '200': { description: Inbox item marked read }
+  /inbox/{cardId}:
+    get:
+      operationId: getInboxItem
+      parameters:
+        - $ref: '#/components/parameters/CardId'
+      responses:
+        '200': { description: Delivered card for the authenticated recipient }
+        '404': { $ref: '#/components/responses/NotFound' }
 components:
   securitySchemes:
     cognitoJwt:
@@ -271,6 +338,55 @@ components:
       properties:
         contentType: { type: string, enum: [image/jpeg, image/png, image/webp] }
         sizeBytes: { type: integer, minimum: 1, maximum: 10485760 }
+    GenerateCardRequest:
+      type: object
+      additionalProperties: false
+      required: [recipientUserId, occasion, tone, locale]
+      properties:
+        recipientUserId: { type: string }
+        occasion: { type: string, minLength: 1, maxLength: 120 }
+        tone: { type: string, enum: [AFFECTIONATE, PLAYFUL, GRATEFUL, REFLECTIVE] }
+        locale: { type: string, enum: [en, es] }
+        memoryIds:
+          type: array
+          maxItems: 20
+          items: { type: string, format: uuid }
+    GeneratedCardDraft:
+      type: object
+      additionalProperties: false
+      required: [title, body, citedMemoryIds]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 120 }
+        body: { type: string, minLength: 1, maxLength: 10000 }
+        citedMemoryIds:
+          type: array
+          maxItems: 20
+          items: { type: string, format: uuid }
+    SaveCardRequest:
+      allOf:
+        - $ref: '#/components/schemas/GenerateCardRequest'
+        - $ref: '#/components/schemas/GeneratedCardDraft'
+        - type: object
+          required: [clientRequestId]
+          properties:
+            clientRequestId: { type: string, format: uuid }
+    UpdateCardRequest:
+      allOf:
+        - $ref: '#/components/schemas/GenerateCardRequest'
+        - $ref: '#/components/schemas/GeneratedCardDraft'
+        - type: object
+          required: [version]
+          properties:
+            version: { type: integer, minimum: 1 }
+    SendCardRequest:
+      type: object
+      additionalProperties: false
+      required: [confirmed, version, idempotencyKey]
+      properties:
+        confirmed: { const: true }
+        version: { type: integer, minimum: 1 }
+        idempotencyKey: { type: string, minLength: 16, maxLength: 128 }
+        deliveryAt: { type: string, format: date-time }
     ApiError:
       type: object
       required: [code, message]
