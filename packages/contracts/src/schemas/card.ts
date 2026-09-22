@@ -40,6 +40,10 @@ export const generatedCardDraftSchema = z
     }
   });
 
+export const modelCardDraftSchema = generatedCardDraftSchema.extend({
+  insufficientEvidence: z.boolean(),
+});
+
 export const cardDraftSchema = generatedCardDraftSchema;
 
 export const saveCardRequestSchema = generateCardRequestSchema.extend({

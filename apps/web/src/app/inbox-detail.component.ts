@@ -9,7 +9,7 @@ import { CardsApiService } from './cards-api.service.js';
   template: ` <section class="mx-auto max-w-3xl py-12">
     <a routerLink="/app/inbox" class="text-sm text-rose">← Inbox</a>
     @if (error()) {
-      <p class="mt-8 rounded-xl bg-wine/30 p-4">{{ error() }}</p>
+      <p class="mt-8 rounded-xl bg-wine/30 p-4" role="alert">{{ error() }}</p>
     }
     @if (item(); as card) {
       <article class="mt-8 rounded-3xl bg-paper p-8 text-ink sm:p-12">

@@ -2,7 +2,15 @@ import * as cdk from 'aws-cdk-lib';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, it } from 'vitest';
 import type { StageConfig } from './config.js';
-import { AiStack, ApiStack, AuthStack, DataStack, EdgeStack, MessagingStack } from './stacks.js';
+import {
+  AiStack,
+  ApiStack,
+  AuthStack,
+  DataStack,
+  EdgeStack,
+  MessagingStack,
+  ObservabilityStack,
+} from './stacks.js';
 
 const dev: StageConfig = {
   stage: 'dev',
@@ -11,7 +19,13 @@ const dev: StageConfig = {
   retainData: false,
   logRetentionDays: 14,
   monthlyBudgetUsd: 15,
+  apiRateLimit: 10,
+  apiBurstLimit: 20,
+  aiReservedConcurrency: 2,
+  aiDeadlineMs: 24_000,
+  backupRetentionDays: 35,
 };
+const testStage: StageConfig = { ...dev, stage: 'test', coupleId: 'couple-test' };
 
 describe('privacy infrastructure', () => {
   it('blocks all public access to data buckets and encrypts the table', () => {
@@ -66,6 +80,8 @@ describe('privacy infrastructure', () => {
         frontendDomain: 'frontend.example.test',
         mediaBucket: data.mediaBucket,
         knowledgeBaseId: 'kb-test',
+        inferenceProfileArn:
+          'arn:aws:bedrock:us-east-1:111111111111:application-inference-profile/test',
         deliveryQueue: messaging.deliveryQueue,
         deliveryDlq: messaging.deadLetterQueue,
         schedulerRole: messaging.schedulerRole,
@@ -145,5 +161,104 @@ describe('privacy infrastructure', () => {
       }),
     });
     template.hasResourceProperties('AWS::Lambda::Function', { ReservedConcurrentExecutions: 1 });
+    template.hasResourceProperties('AWS::Bedrock::ApplicationInferenceProfile', {
+      InferenceProfileName: 'relationship-rag-dev-generation',
+      Tags: Match.arrayWith([
+        { Key: 'Application', Value: 'relationship-rag' },
+        { Key: 'Environment', Value: 'dev' },
+      ]),
+    });
+  });
+
+  it('enables same-region recovery controls outside development', () => {
+    const app = new cdk.App();
+    const template = Template.fromStack(new DataStack(app, 'data-test', { config: testStage }));
+
+    template.hasResourceProperties('AWS::DynamoDB::Table', {
+      PointInTimeRecoverySpecification: {
+        PointInTimeRecoveryEnabled: true,
+        RecoveryPeriodInDays: 35,
+      },
+    });
+    template.allResourcesProperties('AWS::S3::Bucket', {
+      VersioningConfiguration: { Status: 'Enabled' },
+    });
+  });
+
+  it('configures privacy-safe API access logs, throttling, and bounded AI concurrency', () => {
+    const app = new cdk.App();
+    const data = new DataStack(app, 'data-test', { config: dev });
+    const auth = new AuthStack(app, 'auth-test', {
+      config: dev,
+      frontendDomain: 'frontend.example.test',
+    });
+    const messaging = new MessagingStack(app, 'messaging-test', {
+      config: dev,
+      applicationTable: data.applicationTable,
+    });
+    const template = Template.fromStack(
+      new ApiStack(app, 'api-test', {
+        config: dev,
+        applicationTable: data.applicationTable,
+        userPool: auth.userPool,
+        userPoolClient: auth.userPoolClient,
+        issuer: auth.issuer,
+        frontendDomain: 'frontend.example.test',
+        mediaBucket: data.mediaBucket,
+        knowledgeBaseId: 'kb-test',
+        inferenceProfileArn:
+          'arn:aws:bedrock:us-east-1:111111111111:application-inference-profile/test',
+        deliveryQueue: messaging.deliveryQueue,
+        deliveryDlq: messaging.deadLetterQueue,
+        schedulerRole: messaging.schedulerRole,
+      }),
+    );
+
+    template.hasResourceProperties('AWS::ApiGatewayV2::Stage', {
+      AccessLogSettings: Match.objectLike({ DestinationArn: Match.anyValue() }),
+      DefaultRouteSettings: {
+        DetailedMetricsEnabled: true,
+        ThrottlingBurstLimit: 20,
+        ThrottlingRateLimit: 10,
+      },
+    });
+    template.resourcePropertiesCountIs(
+      'AWS::Lambda::Function',
+      { ReservedConcurrentExecutions: 2 },
+      2,
+    );
+    template.resourcePropertiesCountIs(
+      'AWS::Lambda::Function',
+      {
+        Environment: {
+          Variables: Match.objectLike({ AWS_LAMBDA_EXEC_WRAPPER: '/opt/otel-proxy-handler' }),
+        },
+        Layers: Match.anyValue(),
+        TracingConfig: { Mode: 'Active' },
+      },
+      5,
+    );
+  });
+
+  it('routes alarms and three budget thresholds through an encrypted topic', () => {
+    const app = new cdk.App();
+    const template = Template.fromStack(
+      new ObservabilityStack(app, 'observability-test', {
+        config: testStage,
+        alertEmail: 'operator@example.test',
+      }),
+    );
+
+    template.hasResourceProperties('AWS::SNS::Topic', { KmsMasterKeyId: Match.anyValue() });
+    template.hasResourceProperties('AWS::SNS::Subscription', {
+      Protocol: 'email',
+      Endpoint: 'operator@example.test',
+    });
+    template.hasResourceProperties('AWS::Budgets::Budget', {
+      NotificationsWithSubscribers: Match.arrayWith([
+        Match.objectLike({ Notification: Match.objectLike({ Threshold: 80 }) }),
+        Match.objectLike({ Notification: Match.objectLike({ Threshold: 100 }) }),
+      ]),
+    });
   });
 });

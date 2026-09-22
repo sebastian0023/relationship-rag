@@ -10,7 +10,7 @@ import { CardsApiService } from './cards-api.service.js';
     <p class="text-sm uppercase tracking-[.2em] text-rose">Just for you</p>
     <h1 class="mt-2 font-display text-5xl">Inbox</h1>
     @if (error()) {
-      <p class="mt-8 rounded-xl bg-wine/30 p-4">{{ error() }}</p>
+      <p class="mt-8 rounded-xl bg-wine/30 p-4" role="alert">{{ error() }}</p>
     }
     @if (!loading() && items().length === 0) {
       <p class="mt-16 text-center text-cream/60">Delivered cards will appear here.</p>

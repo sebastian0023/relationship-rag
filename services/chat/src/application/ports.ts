@@ -17,6 +17,7 @@ export interface MemoryRetriever {
     coupleId: string,
     query: string,
     filters?: MemoryRetrievalFilters,
+    signal?: AbortSignal,
   ): Promise<readonly RetrievedMemory[]>;
 }
 
@@ -27,11 +28,15 @@ export interface GroundedGeneration {
 }
 
 export interface GroundedAnswerGenerator {
-  generate(question: string, evidence: readonly RetrievedMemory[]): Promise<GroundedGeneration>;
+  generate(
+    question: string,
+    evidence: readonly RetrievedMemory[],
+    signal?: AbortSignal,
+  ): Promise<GroundedGeneration>;
 }
 
 export interface ConversationRewriter {
-  resolve(question: string, history: readonly ChatTurn[]): Promise<string>;
+  resolve(question: string, history: readonly ChatTurn[], signal?: AbortSignal): Promise<string>;
 }
 
 export interface ConversationRepository {

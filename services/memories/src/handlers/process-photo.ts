@@ -5,6 +5,7 @@ import {
   S3Client,
 } from '@aws-sdk/client-s3';
 import { DynamoDbMemoryRepository } from '../adapters/dynamodb-memory-repository.js';
+import { createJsonLogger, createMetrics } from '@relationship-rag/observability';
 
 interface SqsEvent {
   readonly Records: readonly { readonly body: string }[];
@@ -31,6 +32,8 @@ export const handler = async (event: SqsEvent): Promise<void> => {
     throw new Error('Photo processor configuration is required.');
   const repository = new DynamoDbMemoryRepository(tableName);
   const s3 = new S3Client({});
+  const logger = createJsonLogger();
+  const metrics = createMetrics('media');
   for (const message of event.Records) {
     const notification = JSON.parse(message.body) as S3Event;
     for (const record of notification.Records) {
@@ -106,6 +109,10 @@ export const handler = async (event: SqsEvent): Promise<void> => {
         );
         await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
       } catch {
+        logger.log('warn', 'media.processing.failed', {
+          failureCode: 'PHOTO_PROCESSING_FAILED',
+        });
+        metrics.put('RecordFailure', 1);
         const latest = await repository.findById(coupleId, memoryId);
         if (latest !== null)
           await repository.update(

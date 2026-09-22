@@ -13,7 +13,7 @@ import { MemoriesApiService } from './memories-api.service.js';
       {{ memoryId === null ? 'Add a memory' : 'Edit memory' }}
     </h1>
     @if (error()) {
-      <p class="mt-6 rounded-xl bg-wine/30 p-4">{{ error() }}</p>
+      <p class="mt-6 rounded-xl bg-wine/30 p-4" role="alert">{{ error() }}</p>
     }
     <form class="mt-8 space-y-5" (ngSubmit)="save()">
       <label class="block"

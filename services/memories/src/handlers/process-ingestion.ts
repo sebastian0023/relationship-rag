@@ -1,4 +1,4 @@
-import { createJsonLogger } from '@relationship-rag/observability';
+import { createJsonLogger, createMetrics } from '@relationship-rag/observability';
 import { DynamoDbMemoryRepository } from '../adapters/dynamodb-memory-repository.js';
 import { S3MemoryDocumentStore } from '../adapters/s3-memory-document-store.js';
 import { BedrockKnowledgeBaseIngestion } from '../adapters/bedrock-knowledge-base-ingestion.js';
@@ -12,11 +12,20 @@ export const handler = async (): Promise<void> => {
   const dataSourceId = process.env['DATA_SOURCE_ID'];
   if ([table, bucket, coupleId, knowledgeBaseId, dataSourceId].some((value) => value === undefined))
     throw new Error('Ingestion coordinator configuration is required.');
-  await new IngestionCoordinator(
-    coupleId!,
-    new DynamoDbMemoryRepository(table!),
-    new S3MemoryDocumentStore(bucket!),
-    new BedrockKnowledgeBaseIngestion(knowledgeBaseId!, dataSourceId!),
-    createJsonLogger(),
-  ).run();
+  const metrics = createMetrics('ingestion');
+  try {
+    await new IngestionCoordinator(
+      coupleId!,
+      new DynamoDbMemoryRepository(table!),
+      new S3MemoryDocumentStore(bucket!),
+      new BedrockKnowledgeBaseIngestion(knowledgeBaseId!, dataSourceId!),
+      createJsonLogger(),
+      () => new Date(),
+      metrics,
+    ).run();
+    metrics.put('CoordinatorHeartbeat', 1);
+  } catch (error) {
+    metrics.put('RecordFailure', 1);
+    throw error;
+  }
 };

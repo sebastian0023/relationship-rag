@@ -3,20 +3,14 @@ import {
   BedrockRuntimeClient,
   type ConverseCommandOutput,
 } from '@aws-sdk/client-bedrock-runtime';
-import { z } from 'zod';
-import type { ChatTurn } from '@relationship-rag/contracts';
+import { modelGroundedAnswerSchema, type ChatTurn } from '@relationship-rag/contracts';
+import { createMetrics, type Metrics } from '@relationship-rag/observability';
 import type {
   ConversationRewriter,
   GroundedAnswerGenerator,
   GroundedGeneration,
   RetrievedMemory,
 } from '../application/ports.js';
-
-const modelAnswerSchema = z.object({
-  answer: z.string().trim().min(1).max(10_000),
-  citedMemoryIds: z.array(z.string().uuid()).max(5),
-  abstained: z.boolean(),
-});
 
 const textFrom = (result: ConverseCommandOutput): string => {
   const blocks = result.output?.message?.content;
@@ -34,17 +28,20 @@ const jsonFrom = (text: string): unknown => {
 export class BedrockGroundedGenerator implements GroundedAnswerGenerator, ConversationRewriter {
   private readonly client: BedrockRuntimeClient;
   public constructor(
-    private readonly modelId = 'amazon.nova-micro-v1:0',
+    private readonly modelId = process.env['MODEL_ID'] ?? 'amazon.nova-micro-v1:0',
     client?: BedrockRuntimeClient,
+    private readonly metrics: Metrics = createMetrics('chat'),
   ) {
-    this.client = client ?? new BedrockRuntimeClient({});
+    this.client = client ?? new BedrockRuntimeClient({ maxAttempts: 2 });
   }
 
   public async generate(
     question: string,
     evidence: readonly RetrievedMemory[],
+    signal?: AbortSignal,
   ): Promise<GroundedGeneration> {
     const allowed = new Set(evidence.map((memory) => memory.memoryId));
+    const startedAt = Date.now();
     const result = await this.client.send(
       new ConverseCommand({
         modelId: this.modelId,
@@ -65,9 +62,10 @@ export class BedrockGroundedGenerator implements GroundedAnswerGenerator, Conver
         ],
         inferenceConfig: { temperature: 0, maxTokens: 1024 },
       }),
-      { abortSignal: AbortSignal.timeout(25_000) },
+      { abortSignal: signal ?? AbortSignal.timeout(24_000) },
     );
-    const parsed = modelAnswerSchema.parse(jsonFrom(textFrom(result)));
+    this.recordUsage(result, startedAt);
+    const parsed = modelGroundedAnswerSchema.parse(jsonFrom(textFrom(result)));
     if (parsed.citedMemoryIds.some((memoryId) => !allowed.has(memoryId))) {
       throw new Error('Model cited an unknown memory.');
     }
@@ -77,12 +75,17 @@ export class BedrockGroundedGenerator implements GroundedAnswerGenerator, Conver
     return parsed;
   }
 
-  public async resolve(question: string, history: readonly ChatTurn[]): Promise<string> {
+  public async resolve(
+    question: string,
+    history: readonly ChatTurn[],
+    signal?: AbortSignal,
+  ): Promise<string> {
     const summary = history
       .slice(-6)
       .map((turn) => `Q: ${turn.question}\nA: ${turn.answer ?? ''}`)
       .join('\n\n')
       .slice(-12_000);
+    const startedAt = Date.now();
     const result = await this.client.send(
       new ConverseCommand({
         modelId: this.modelId,
@@ -99,11 +102,20 @@ export class BedrockGroundedGenerator implements GroundedAnswerGenerator, Conver
         ],
         inferenceConfig: { temperature: 0, maxTokens: 256 },
       }),
-      { abortSignal: AbortSignal.timeout(25_000) },
+      { abortSignal: signal ?? AbortSignal.timeout(24_000) },
     );
+    this.recordUsage(result, startedAt);
     const resolved = textFrom(result)
       .replace(/^['"]|['"]$/g, '')
       .trim();
     return resolved.length === 0 || resolved.length > 2_000 ? question : resolved;
+  }
+
+  private recordUsage(result: ConverseCommandOutput, startedAt: number): void {
+    this.metrics.put('ModelLatency', Date.now() - startedAt, 'Milliseconds');
+    if (result.usage?.inputTokens !== undefined)
+      this.metrics.put('ModelInputTokens', result.usage.inputTokens);
+    if (result.usage?.outputTokens !== undefined)
+      this.metrics.put('ModelOutputTokens', result.usage.outputTokens);
   }
 }

@@ -39,6 +39,7 @@ export class CardService {
     private readonly ids: IdGenerator,
     private readonly clock: Clock,
     private readonly dispatcher?: DeliveryDispatcher,
+    private readonly executionDeadlineMs = 24_000,
   ) {}
 
   public recipients(coupleId: string, senderUserId: string) {
@@ -60,7 +61,11 @@ export class CardService {
     if (inputSize > 40_000) {
       throw new DomainError('CONTEXT_TOO_LARGE', 'Select fewer or shorter memories.');
     }
-    const draft = await this.generator.generate(request, memories);
+    const draft = await this.generator.generate(
+      request,
+      memories,
+      AbortSignal.timeout(this.executionDeadlineMs),
+    );
     ensureCitations(request.memoryIds, draft.citedMemoryIds);
     return draft;
   }

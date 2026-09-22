@@ -5,7 +5,12 @@ import {
   type ApiError,
 } from '@relationship-rag/contracts';
 import { AuthorizationError } from '@relationship-rag/domain';
-import { createJsonLogger, type Logger } from '@relationship-rag/observability';
+import {
+  createJsonLogger,
+  createMetrics,
+  currentTraceId,
+  type Logger,
+} from '@relationship-rag/observability';
 import { GetMyProfile } from '../application/get-my-profile.js';
 import { DynamoDbMembershipRepository } from '../adapters/dynamodb-membership-repository.js';
 
@@ -46,8 +51,16 @@ export const createGetMeHandler = (
   getMyProfile: GetMyProfile,
   logger: Logger = createJsonLogger(),
 ) => {
+  const metrics = createMetrics('identity');
   return async (event: HttpEvent): Promise<HttpResponse> => {
     const correlationId = event.requestContext.requestId;
+    const respond = (statusCode: number, responseBody: unknown): HttpResponse => {
+      const response = json(statusCode, responseBody);
+      return {
+        ...response,
+        headers: { ...response.headers, 'x-correlation-id': correlationId },
+      };
+    };
     const claims = event.requestContext.authorizer?.jwt?.claims ?? {};
     const identity = verifiedIdentitySchema.safeParse({
       userId: claims['sub'],
@@ -56,7 +69,7 @@ export const createGetMeHandler = (
 
     if (!identity.success) {
       logger.log('warn', 'identity.profile.denied', { correlationId, reason: 'invalid_claims' });
-      return json(
+      return respond(
         403,
         error('FORBIDDEN', 'You are not authorized to access this resource.', correlationId),
       );
@@ -71,7 +84,7 @@ export const createGetMeHandler = (
         statusCode: 200,
         latencyMs: Date.now() - startedAt,
       });
-      return json(200, profile);
+      return respond(200, profile);
     } catch (caught: unknown) {
       if (caught instanceof AuthorizationError) {
         logger.log('warn', 'identity.profile.denied', {
@@ -80,7 +93,7 @@ export const createGetMeHandler = (
           statusCode: 403,
           latencyMs: Date.now() - startedAt,
         });
-        return json(
+        return respond(
           403,
           error('FORBIDDEN', 'You are not authorized to access this resource.', correlationId),
         );
@@ -91,8 +104,13 @@ export const createGetMeHandler = (
         subjectId: identity.data.userId,
         statusCode: 500,
         latencyMs: Date.now() - startedAt,
+        traceId: currentTraceId(),
       });
-      return json(500, error('INTERNAL_ERROR', 'Unable to retrieve your profile.', correlationId));
+      metrics.put('DependencyFailure', 1);
+      return respond(
+        500,
+        error('INTERNAL_ERROR', 'Unable to retrieve your profile.', correlationId),
+      );
     }
   };
 };

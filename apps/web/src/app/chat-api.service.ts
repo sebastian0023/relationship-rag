@@ -44,8 +44,14 @@ export class ChatApiService {
       },
     });
     if (!response.ok) {
-      const error = (await response.json().catch(() => ({}))) as { message?: string };
-      throw new Error(error.message ?? 'Unable to complete this request.');
+      const error = (await response.json().catch(() => ({}))) as {
+        message?: string;
+        correlationId?: string;
+      };
+      const correlationId = error.correlationId ?? response.headers.get('x-correlation-id');
+      throw new Error(
+        `${error.message ?? 'Unable to complete this request.'}${correlationId === null || correlationId === undefined ? '' : ` Reference: ${correlationId}`}`,
+      );
     }
     return response.json();
   }

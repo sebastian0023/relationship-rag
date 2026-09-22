@@ -17,7 +17,7 @@ import { MemoriesApiService } from './memories-api.service.js';
       >
     </div>
     @if (error()) {
-      <p class="mt-8 rounded-xl bg-wine/30 p-4">{{ error() }}</p>
+      <p class="mt-8 rounded-xl bg-wine/30 p-4" role="alert">{{ error() }}</p>
     }
     @if (items().length === 0 && !loading()) {
       <p class="mt-16 text-center text-cream/65">Your story starts with one memory.</p>

@@ -1,4 +1,4 @@
-import type { Logger } from '@relationship-rag/observability';
+import type { Logger, Metrics } from '@relationship-rag/observability';
 import type { MemoryRepository } from './memory-repository.js';
 import { normalizeMemoryDocument } from './memory-document.js';
 import type { IngestionBatch, IngestionWork } from '../domain/ingestion.js';
@@ -23,6 +23,7 @@ export class IngestionCoordinator {
     private readonly knowledgeBase: KnowledgeBaseIngestion,
     private readonly logger: Logger,
     private readonly clock: () => Date = () => new Date(),
+    private readonly metrics?: Metrics,
   ) {}
 
   public async run(): Promise<void> {
@@ -56,6 +57,7 @@ export class IngestionCoordinator {
         }
         accepted.push(item);
       } catch {
+        this.metrics?.put('RecordFailure', 1);
         await this.repository.completeIngestion(
           item.coupleId,
           item.memoryId,
@@ -80,6 +82,7 @@ export class IngestionCoordinator {
       });
       this.logger.log('info', 'ingestion.batch.started', { itemCount: accepted.length });
     } catch {
+      this.metrics?.put('RecordFailure', accepted.length);
       for (const item of accepted)
         await this.repository.completeIngestion(
           item.coupleId,
@@ -130,5 +133,6 @@ export class IngestionCoordinator {
       itemCount: batch.items.length,
       status,
     });
+    if (status !== 'INDEXED') this.metrics?.put('RecordFailure', batch.items.length);
   }
 }

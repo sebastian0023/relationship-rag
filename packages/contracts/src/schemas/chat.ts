@@ -52,6 +52,12 @@ export const groundedAnswerSchema = z
     }
   });
 
+export const modelGroundedAnswerSchema = z.object({
+  answer: z.string().trim().min(1).max(10_000),
+  citedMemoryIds: z.array(idSchema).max(5),
+  abstained: z.boolean(),
+});
+
 export const conversationSummarySchema = z.object({
   conversationId: idSchema,
   title: z.string().min(1).max(120),

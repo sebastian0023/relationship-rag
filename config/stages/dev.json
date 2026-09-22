@@ -4,5 +4,10 @@
   "deletionProtection": false,
   "retainData": false,
   "logRetentionDays": 14,
-  "monthlyBudgetUsd": 15
+  "monthlyBudgetUsd": 15,
+  "apiRateLimit": 10,
+  "apiBurstLimit": 20,
+  "aiReservedConcurrency": 2,
+  "aiDeadlineMs": 24000,
+  "backupRetentionDays": 35
 }

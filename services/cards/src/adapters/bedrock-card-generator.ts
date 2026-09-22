@@ -5,13 +5,12 @@ import {
 } from '@aws-sdk/client-bedrock-runtime';
 import {
   generatedCardDraftSchema,
+  modelCardDraftSchema,
   type GenerateCardRequest,
   type GeneratedCardDraft,
 } from '@relationship-rag/contracts';
 import type { CardGenerator, SelectedMemory } from '../application/ports.js';
-import { z } from 'zod';
-
-const modelDraftSchema = generatedCardDraftSchema.extend({ insufficientEvidence: z.boolean() });
+import { createMetrics, type Metrics } from '@relationship-rag/observability';
 
 const textFrom = (output: ConverseCommandOutput): string => {
   const text = output.output?.message?.content
@@ -25,15 +24,17 @@ const textFrom = (output: ConverseCommandOutput): string => {
 export class BedrockCardGenerator implements CardGenerator {
   private readonly client: BedrockRuntimeClient;
   public constructor(
-    private readonly modelId = 'amazon.nova-micro-v1:0',
+    private readonly modelId = process.env['MODEL_ID'] ?? 'amazon.nova-micro-v1:0',
     client?: BedrockRuntimeClient,
+    private readonly metrics: Metrics = createMetrics('cards'),
   ) {
-    this.client = client ?? new BedrockRuntimeClient({});
+    this.client = client ?? new BedrockRuntimeClient({ maxAttempts: 2 });
   }
 
   public async generate(
     request: GenerateCardRequest,
     memories: readonly SelectedMemory[],
+    signal?: AbortSignal,
   ): Promise<GeneratedCardDraft> {
     const context =
       memories.length === 0
@@ -44,6 +45,7 @@ export class BedrockCardGenerator implements CardGenerator {
                 `[${memory.memoryId}] ${memory.title} (${memory.occurredOn})\n${memory.body}`,
             )
             .join('\n\n');
+    const startedAt = Date.now();
     const result = await this.client.send(
       new ConverseCommand({
         modelId: this.modelId,
@@ -64,11 +66,16 @@ export class BedrockCardGenerator implements CardGenerator {
         ],
         inferenceConfig: { temperature: 0.4, maxTokens: 1200 },
       }),
-      { abortSignal: AbortSignal.timeout(25_000) },
+      { abortSignal: signal ?? AbortSignal.timeout(24_000) },
     );
+    this.metrics.put('ModelLatency', Date.now() - startedAt, 'Milliseconds');
+    if (result.usage?.inputTokens !== undefined)
+      this.metrics.put('ModelInputTokens', result.usage.inputTokens);
+    if (result.usage?.outputTokens !== undefined)
+      this.metrics.put('ModelOutputTokens', result.usage.outputTokens);
     const candidate = textFrom(result).match(/\{[\s\S]*\}/)?.[0];
     if (candidate === undefined) throw new Error('Model did not return JSON.');
-    const draft = modelDraftSchema.parse(JSON.parse(candidate) as unknown);
+    const draft = modelCardDraftSchema.parse(JSON.parse(candidate) as unknown);
     if (draft.insufficientEvidence)
       throw new Error('Selected memories do not support the requested card.');
     return generatedCardDraftSchema.parse(draft);
