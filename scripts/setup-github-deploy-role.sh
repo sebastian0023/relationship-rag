@@ -24,7 +24,7 @@ cat > "$tmp_dir/trust.json" <<EOF
     "Action": "sts:AssumeRoleWithWebIdentity",
     "Condition": {"StringEquals": {
       "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-      "token.actions.githubusercontent.com:sub": "repo:sebastian0023/relationship-rag:environment:$stage",
+      "token.actions.githubusercontent.com:sub": "repo:sebastian0023@130592260/relationship-rag@1378013441:environment:$stage",
       "token.actions.githubusercontent.com:ref": "refs/heads/main"
     }}
   }]
@@ -69,11 +69,17 @@ cat > "$tmp_dir/permissions.json" <<EOF
 }
 EOF
 
-aws iam create-role \
-  --role-name "$role_name" \
-  --assume-role-policy-document "file://$tmp_dir/trust.json" \
-  --tags "Key=Application,Value=relationship-rag" "Key=Environment,Value=$stage" \
-  --query Role.Arn --output text
+if aws iam get-role --role-name "$role_name" >/dev/null 2>&1; then
+  aws iam update-assume-role-policy \
+    --role-name "$role_name" \
+    --policy-document "file://$tmp_dir/trust.json"
+else
+  aws iam create-role \
+    --role-name "$role_name" \
+    --assume-role-policy-document "file://$tmp_dir/trust.json" \
+    --tags "Key=Application,Value=relationship-rag" "Key=Environment,Value=$stage" \
+    --query Role.Arn --output text
+fi
 aws iam put-role-policy \
   --role-name "$role_name" \
   --policy-name "$policy_name" \

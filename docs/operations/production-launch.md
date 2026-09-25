@@ -16,8 +16,9 @@ deployed domain.
    `npx cdk bootstrap aws://<ACCOUNT_ID>/us-east-1` from an approved operator session.
 3. Reuse the existing GitHub OIDC provider `token.actions.githubusercontent.com`, with audience
    `sts.amazonaws.com`. Create separate test and production deployment roles. Restrict their
-   trust to `repo:sebastian0023/relationship-rag:environment:test` or
-   `repo:sebastian0023/relationship-rag:environment:prod`, respectively, and to `refs/heads/main`.
+   trust to this repository's `test` or `prod` environment, respectively, and to `refs/heads/main`.
+   This repository uses GitHub's immutable OIDC subject format, so the setup script includes its
+   owner and repository IDs in each trust condition.
    After reviewing its trust and permissions, run `bash scripts/setup-github-deploy-role.sh test`
    and later `bash scripts/setup-github-deploy-role.sh prod` from the authorized AWS session. The
    script grants the CDK bootstrap deployment/asset permissions and the CloudFormation output,
