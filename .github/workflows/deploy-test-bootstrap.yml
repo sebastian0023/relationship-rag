@@ -1,4 +1,4 @@
-name: Phase 7 test-stage validation
+name: Bootstrap test deployment
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy-and-validate:
+  deploy:
     runs-on: ubuntu-latest
     environment: test
     timeout-minutes: 60
@@ -26,11 +26,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run verify
-      - name: Validate protected inputs
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e -- --project=chromium
+      - name: Check test deployment inputs
         env:
           ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
-          TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
-          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
           AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
           AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
           AWS_REGION: ${{ vars.AWS_REGION }}
@@ -38,7 +38,7 @@ jobs:
           test -n "$AWS_ACCOUNT_ID"
           test -n "$AWS_ROLE_ARN"
           test "$AWS_REGION" = us-east-1
-          node scripts/phase7-live-inputs.mjs
+          ALERT_EMAIL="$ALERT_EMAIL" node --input-type=module -e 'if (!/^\S+@\S+\.\S+$/.test(process.env.ALERT_EMAIL ?? "")) process.exit(1)'
       - uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
@@ -47,36 +47,14 @@ jobs:
         env:
           AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
         run: test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
-      - name: Deploy test stacks
+      - name: Reviewable test diff and deploy
         env:
           ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
         run: |
           npm run --workspace @relationship-rag/infrastructure synth -- --context stage=test --context alertEmail="$ALERT_EMAIL" >/dev/null
           npx cdk diff --app 'node apps/infrastructure/dist/bin/app.js' --context stage=test --context alertEmail="$ALERT_EMAIL" --all
           npx cdk deploy --app 'node apps/infrastructure/dist/bin/app.js' --context stage=test --context alertEmail="$ALERT_EMAIL" --all --require-approval never
-      - name: Publish frontend and runtime configuration
-        id: frontend
+      - name: Publish test frontend
         env:
           AWS_PAGER: ''
         run: bash scripts/publish-frontend.sh test
-      - name: Record deployment target
-        env:
-          APP_URL: ${{ steps.frontend.outputs.app_url }}
-        run: |
-          echo "PHASE7_BASE_URL=$APP_URL" >> "$GITHUB_ENV"
-          mkdir -p phase7-evidence
-          # shellcheck disable=SC2016
-          printf '# Phase 7 test-stage evidence\n\n- Commit: `%s`\n- Workflow run: `%s`\n- Region: `%s`\n- Started (UTC): `%s`\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$AWS_REGION" "$(date -u +%FT%TZ)" > phase7-evidence/run.md
-      - run: npx playwright install --with-deps chromium
-      - name: Run deployed authentication and accessibility smoke test
-        env:
-          PHASE7_TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
-          PHASE7_TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
-        run: npm run test:e2e:live
-      - name: Publish alarm smoke metric
-        run: npm run phase7:alarm-smoke -- --stage test --confirm | tee phase7-evidence/alarm-smoke.txt
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: phase7-test-evidence
-          path: phase7-evidence

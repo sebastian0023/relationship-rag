@@ -1,0 +1,80 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_run_id:
+        description: Successful Phase 7 test validation run ID for this commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+
+concurrency:
+  group: relationship-rag-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: prod
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: Require main branch
+        run: test "$GITHUB_REF" = refs/heads/main
+      - name: Verify matching successful test run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEST_RUN_ID: ${{ inputs.test_run_id }}
+        run: |
+          set -o pipefail
+          [[ "$TEST_RUN_ID" =~ ^[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TEST_RUN_ID" | node scripts/verify-test-promotion.mjs
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run verify
+      - name: Check production deployment inputs
+        env:
+          ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          test -n "$AWS_ACCOUNT_ID"
+          test -n "$AWS_ROLE_ARN"
+          test "$AWS_REGION" = us-east-1
+          ALERT_EMAIL="$ALERT_EMAIL" node --input-type=module -e 'if (!/^\S+@\S+\.\S+$/.test(process.env.ALERT_EMAIL ?? "")) process.exit(1)'
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Verify AWS account
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+        run: test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+      - name: Reviewable production diff and deploy
+        env:
+          ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+        run: |
+          npm run --workspace @relationship-rag/infrastructure synth -- --context stage=prod --context alertEmail="$ALERT_EMAIL" >/dev/null
+          npx cdk diff --app 'node apps/infrastructure/dist/bin/app.js' --context stage=prod --context alertEmail="$ALERT_EMAIL" --all
+          npx cdk deploy --app 'node apps/infrastructure/dist/bin/app.js' --context stage=prod --context alertEmail="$ALERT_EMAIL" --all --require-approval never
+      - name: Publish production frontend
+        id: frontend
+        env:
+          AWS_PAGER: ''
+        run: bash scripts/publish-frontend.sh prod
+      - name: Verify production frontend
+        env:
+          APP_URL: ${{ steps.frontend.outputs.app_url }}
+        run: |
+          curl --fail --silent --show-error "$APP_URL/" >/dev/null
+          curl --fail --silent --show-error "$APP_URL/assets/runtime-config.json" >/dev/null
+          echo "Production frontend: $APP_URL" >> "$GITHUB_STEP_SUMMARY"

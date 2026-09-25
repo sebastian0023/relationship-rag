@@ -4,6 +4,7 @@ coverage/
 .angular/
 .aws-sam/
 cdk.out/
+cdk.out.*/
 *.tsbuildinfo
 *.log
 .DS_Store
@@ -12,4 +13,3 @@ cdk.out/
 !.env.example
 playwright-report/
 test-results/
-

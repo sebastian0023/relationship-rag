@@ -21,6 +21,7 @@
     "lint": "eslint .",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",
+    "test:release": "node --test scripts/verify-test-promotion.test.mjs",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
@@ -32,7 +33,7 @@
     "delivery:replay": "node scripts/replay-delivery.mjs",
     "phase7:guardrails": "node scripts/phase7-guardrails.mjs",
     "phase7:alarm-smoke": "node scripts/phase7-alarm-smoke.mjs",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run rag:chat-eval && npm run rag:card-eval && npm run phase7:guardrails && npm run build && npm run synth"
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:release && npm run rag:chat-eval && npm run rag:card-eval && npm run phase7:guardrails && npm run build && npm run synth"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",

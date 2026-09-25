@@ -4,7 +4,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/coverage/**', '**/.angular/**', '**/cdk.out/**'],
+    ignores: ['**/dist/**', '**/coverage/**', '**/.angular/**', '**/cdk.out/**', '**/cdk.out.*/**'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,

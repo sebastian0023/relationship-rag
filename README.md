@@ -98,3 +98,6 @@ Phase 7 adds privacy-safe structured telemetry, correlated API responses, bounde
 stage budgets with operator notifications, and same-region recovery controls. See
 [`docs/operations/phase-7-operations.md`](./docs/operations/phase-7-operations.md) for alarm smoke
 tests, restore drills, incident response, and the manual billing-tag prerequisite.
+
+For a test-account bootstrap and protected production launch, follow
+[`docs/operations/production-launch.md`](./docs/operations/production-launch.md).
