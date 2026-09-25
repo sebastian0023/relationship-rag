@@ -20,7 +20,14 @@ const projectionKey = (card: Card) => ({
   PK: senderPartition(card.coupleId, card.senderUserId),
   SK: `CARD_CREATED#${card.createdAt}#${card.cardId}`,
 });
-const cardItem = (card: Card, key: object) => ({ ...key, entityType: 'CARD', ...card });
+const cardItem = (card: Card, key: object) => ({ ...card, ...key, entityType: 'CARD' });
+const fromItem = (item: Record<string, unknown>): Card => {
+  const { PK, SK, entityType, ...card } = item;
+  void PK;
+  void SK;
+  void entityType;
+  return card as unknown as Card;
+};
 const encode = (key: Record<string, unknown>) =>
   Buffer.from(JSON.stringify(key)).toString('base64url');
 const decode = (cursor?: string): Record<string, unknown> | undefined =>
@@ -156,7 +163,7 @@ export class DynamoDbCardRepository implements CardRepository {
         ConsistentRead: true,
       }),
     );
-    return (result.Item as Card | undefined) ?? null;
+    return result.Item === undefined ? null : fromItem(result.Item);
   }
 
   public async list(coupleId: string, senderUserId: string, cursor?: string, limit = 20) {
@@ -174,7 +181,7 @@ export class DynamoDbCardRepository implements CardRepository {
       }),
     );
     return {
-      items: (result.Items ?? []) as unknown as Card[],
+      items: (result.Items ?? []).map(fromItem),
       ...(result.LastEvaluatedKey === undefined
         ? {}
         : { nextCursor: encode(result.LastEvaluatedKey) }),
