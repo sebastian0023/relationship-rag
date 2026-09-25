@@ -23,7 +23,7 @@ jobs:
     environment: prod
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Require main branch
         run: test "$GITHUB_REF" = refs/heads/main
       - name: Verify matching successful test run
