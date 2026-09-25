@@ -32,8 +32,10 @@ deployed domain.
    workflow broad control of the shared AWS account. Protect workflow changes and the `prod`
    environment accordingly.
 4. Create GitHub environments `test` and `prod`, each limited to `main`. Set environment variables
-   `AWS_ACCOUNT_ID`, `AWS_ROLE_ARN`, `AWS_REGION=us-east-1`, and `ALERT_EMAIL`. Require an independent
-   reviewer for `prod`. Set `TEST_USERNAME` and `TEST_PASSWORD` as **test environment secrets** only
+   `AWS_ACCOUNT_ID`, `AWS_ROLE_ARN`, `AWS_REGION=us-east-1`, and `ALERT_EMAIL`. Production is manual,
+   restricted to `main`, and requires a successful test run for the same commit. This personal
+   project does not use a separate environment reviewer by owner direction. Set `TEST_USERNAME`
+   and `TEST_PASSWORD` as **test environment secrets** only
    after creating a synthetic test member and completing its first-password flow. Never store
    production credentials or member email addresses in repository files or workflow variables.
 5. Activate `Application`, `Environment`, and `CostScope` cost allocation tags in the billing
@@ -59,9 +61,12 @@ The workflows also stop when the assumed account differs from `AWS_ACCOUNT_ID`.
      --email <synthetic-email> --display-name <synthetic-name> --role OWNER
    ```
 
-   Review the role-only dry run, then repeat with `--apply`; do the same for `PARTNER`. Complete
-   the first-password login, then save one synthetic member's credentials as the test environment
-   secrets. Keep synthetic content and credentials out of evidence artifacts.
+   When the same real email addresses are used in both stages, create the two test Cognito users
+   with `MessageAction=SUPPRESS`, verified email and name attributes, and random permanent test
+   passwords before applying memberships. This avoids sending test invitations to the production
+   invitees. Review the role-only dry run, then repeat with `--apply`; do the same for `PARTNER`.
+   Save one synthetic member's credentials as the test environment secrets. Keep synthetic content
+   and credentials out of evidence artifacts. Production uses normal invitation emails.
 
 3. Run **Phase 7 test-stage validation** on `main`. Record its successful run ID, commit SHA,
    Playwright artifact, alarm notification receipt, and CDK events. The production workflow will
@@ -77,8 +82,8 @@ The workflows also stop when the assumed account differs from `AWS_ACCOUNT_ID`.
 
 1. Confirm the test evidence and compare the production CDK diff against the intended seven-stack
    change. Confirm retention, deletion protection, DynamoDB PITR, S3 versioning, queues, DLQs,
-   budget, and alert recipient. The protected GitHub environment reviewer approves only that exact
-   commit and test run ID.
+   budget, and alert recipient. The owner manually dispatches production with that exact commit
+   and test run ID.
 2. Run **Deploy production** from `main` with the successful test validation run ID. The workflow
    checks the commit and account, runs `npm run verify`, deploys all stacks, publishes uncached
    runtime configuration, waits for CloudFront invalidation, and checks the site response. Record
