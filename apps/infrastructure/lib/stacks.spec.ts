@@ -344,6 +344,9 @@ describe('privacy infrastructure', () => {
         },
       },
     });
+    expect(template.toJSON().Resources['DefaultStage'].DependsOn).toEqual(
+      expect.arrayContaining(['GenerateCardRoute', 'CreateChatMessageRoute']),
+    );
     template.resourcePropertiesCountIs(
       'AWS::Lambda::Function',
       { ReservedConcurrentExecutions: 2 },

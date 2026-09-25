@@ -893,7 +893,7 @@ export class ApiStack extends cdk.Stack {
         resources: [`${accessLogGroup.logGroupArn}:*`],
       }),
     );
-    new apigatewayv2.CfnStage(this, 'DefaultStage', {
+    const stage = new apigatewayv2.CfnStage(this, 'DefaultStage', {
       apiId: api.ref,
       stageName: '$default',
       autoDeploy: true,
@@ -927,6 +927,8 @@ export class ApiStack extends cdk.Stack {
         }),
       },
     });
+    stage.addDependency(this.node.findChild('GenerateCardRoute') as apigatewayv2.CfnRoute);
+    stage.addDependency(this.node.findChild('CreateChatMessageRoute') as apigatewayv2.CfnRoute);
 
     const apiDimensions = { ApiId: api.ref, Stage: '$default' };
     new cloudwatch.Alarm(this, 'ApiServerErrorAlarm', {
