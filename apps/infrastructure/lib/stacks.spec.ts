@@ -184,6 +184,13 @@ describe('privacy infrastructure', () => {
         id.startsWith('KnowledgeBaseRoleDefaultPolicy'),
       ),
     );
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({ Action: Match.arrayWith(['s3vectors:GetIndex']) }),
+        ]),
+      },
+    });
     template.hasResourceProperties('AWS::Bedrock::DataSource', {
       VectorIngestionConfiguration: Match.objectLike({
         ChunkingConfiguration: Match.objectLike({ ChunkingStrategy: 'FIXED_SIZE' }),

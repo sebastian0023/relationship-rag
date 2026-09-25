@@ -379,6 +379,7 @@ export class AiStack extends cdk.Stack {
         actions: [
           's3vectors:PutVectors',
           's3vectors:GetVectors',
+          's3vectors:GetIndex',
           's3vectors:QueryVectors',
           's3vectors:DeleteVectors',
         ],
