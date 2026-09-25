@@ -531,7 +531,7 @@ export class ApiStack extends cdk.Stack {
       layerVersion: lambda.AdotLayerVersion.fromJavaScriptSdkLayerVersion(
         lambda.AdotLambdaLayerJavaScriptSdkVersion.V1_30_0,
       ),
-      execWrapper: lambda.AdotLambdaExecWrapper.PROXY_HANDLER,
+      execWrapper: lambda.AdotLambdaExecWrapper.REGULAR_HANDLER,
     };
     // ADOT replaces the handler export at runtime; cloning esbuild's getters makes it writable.
     const adotBundling: lambdaNodejs.BundlingOptions = {

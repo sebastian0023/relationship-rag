@@ -356,7 +356,7 @@ describe('privacy infrastructure', () => {
       'AWS::Lambda::Function',
       {
         Environment: {
-          Variables: Match.objectLike({ AWS_LAMBDA_EXEC_WRAPPER: '/opt/otel-proxy-handler' }),
+          Variables: Match.objectLike({ AWS_LAMBDA_EXEC_WRAPPER: '/opt/otel-handler' }),
         },
         Layers: Match.anyValue(),
         TracingConfig: { Mode: 'Active' },

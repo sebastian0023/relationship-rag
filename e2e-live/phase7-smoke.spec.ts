@@ -9,9 +9,9 @@ if (username === undefined || password === undefined)
 test('real Cognito user can access the private test-stage API', async ({ page }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: 'Sign in with your invitation' }).click();
-  await page.locator('input[name="username"]').fill(username);
-  await page.locator('input[name="password"]').fill(password);
-  await page.locator('button[type="submit"], input[type="submit"]').click();
+  await page.locator('input[name="username"]:visible').first().fill(username);
+  await page.locator('input[name="password"]:visible').first().fill(password);
+  await page.locator('button[type="submit"]:visible, input[type="submit"]:visible').first().click();
 
   await page.waitForURL(/\/app(?:\/|$)/);
   await expect(page.getByRole('navigation', { name: 'Primary navigation' })).toBeVisible();

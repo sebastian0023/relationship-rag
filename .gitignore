@@ -13,3 +13,4 @@ cdk.out.*/
 !.env.example
 playwright-report/
 test-results/
+phase7-evidence/
