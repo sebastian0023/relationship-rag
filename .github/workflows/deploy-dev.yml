@@ -34,7 +34,7 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
       - name: Deploy development stacks
         run: >-
-          npm run --workspace @relationship-rag/infrastructure synth --
+          npm run synth --
           --context stage=dev >/dev/null &&
           npx cdk deploy --app 'node apps/infrastructure/dist/bin/app.js'
           --context stage=dev --all --require-approval never

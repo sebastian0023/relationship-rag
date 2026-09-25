@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import { Match, Template } from 'aws-cdk-lib/assertions';
 import { describe, it } from 'vitest';
 import type { StageConfig } from './config.js';
@@ -28,6 +29,22 @@ const dev: StageConfig = {
 const testStage: StageConfig = { ...dev, stage: 'test', coupleId: 'couple-test' };
 
 describe('privacy infrastructure', () => {
+  it('disables CloudFront caching for runtime configuration', () => {
+    const app = new cdk.App();
+    const template = Template.fromStack(new EdgeStack(app, 'edge-test', { config: dev }));
+
+    template.hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: {
+        CacheBehaviors: Match.arrayWith([
+          Match.objectLike({
+            PathPattern: 'assets/runtime-config.json',
+            CachePolicyId: cloudfront.CachePolicy.CACHING_DISABLED.cachePolicyId,
+          }),
+        ]),
+      },
+    });
+  });
+
   it('blocks all public access to data buckets and encrypts the table', () => {
     const app = new cdk.App();
     const template = Template.fromStack(new DataStack(app, 'data-test', { config: dev }));

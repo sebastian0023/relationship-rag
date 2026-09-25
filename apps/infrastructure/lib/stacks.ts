@@ -293,12 +293,21 @@ export class EdgeStack extends cdk.Stack {
         },
       },
     });
+    const frontendOrigin = origins.S3BucketOrigin.withOriginAccessControl(this.frontendBucket);
     this.distribution = new cloudfront.Distribution(this, 'Distribution', {
       defaultBehavior: {
-        origin: origins.S3BucketOrigin.withOriginAccessControl(this.frontendBucket),
+        origin: frontendOrigin,
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         compress: true,
         responseHeadersPolicy: securityHeaders,
+      },
+      additionalBehaviors: {
+        'assets/runtime-config.json': {
+          origin: frontendOrigin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          responseHeadersPolicy: securityHeaders,
+        },
       },
       defaultRootObject: 'index.html',
       errorResponses: [

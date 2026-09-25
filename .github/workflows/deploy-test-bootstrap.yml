@@ -51,7 +51,7 @@ jobs:
         env:
           ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
         run: |
-          npm run --workspace @relationship-rag/infrastructure synth -- --context stage=test --context alertEmail="$ALERT_EMAIL" >/dev/null
+          npm run synth -- --context stage=test --context alertEmail="$ALERT_EMAIL" >/dev/null
           npx cdk diff --app 'node apps/infrastructure/dist/bin/app.js' --context stage=test --context alertEmail="$ALERT_EMAIL" --all
           npx cdk deploy --app 'node apps/infrastructure/dist/bin/app.js' --context stage=test --context alertEmail="$ALERT_EMAIL" --all --require-approval never
       - name: Publish test frontend
