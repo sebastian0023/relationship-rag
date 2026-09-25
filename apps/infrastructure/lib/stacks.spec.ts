@@ -331,6 +331,18 @@ describe('privacy infrastructure', () => {
         ThrottlingBurstLimit: 20,
         ThrottlingRateLimit: 10,
       },
+      RouteSettings: {
+        'POST /cards/generate': {
+          ThrottlingBurstLimit: 2,
+          ThrottlingRateLimit: 0.2,
+          DetailedMetricsEnabled: true,
+        },
+        'POST /conversations/{conversationId}/messages': {
+          ThrottlingBurstLimit: 2,
+          ThrottlingRateLimit: 0.2,
+          DetailedMetricsEnabled: true,
+        },
+      },
     });
     template.resourcePropertiesCountIs(
       'AWS::Lambda::Function',

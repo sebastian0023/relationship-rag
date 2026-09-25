@@ -904,14 +904,14 @@ export class ApiStack extends cdk.Stack {
       },
       routeSettings: {
         'POST /cards/generate': {
-          throttlingRateLimit: 0.2,
-          throttlingBurstLimit: 2,
-          detailedMetricsEnabled: true,
+          ThrottlingRateLimit: 0.2,
+          ThrottlingBurstLimit: 2,
+          DetailedMetricsEnabled: true,
         },
         'POST /conversations/{conversationId}/messages': {
-          throttlingRateLimit: 0.2,
-          throttlingBurstLimit: 2,
-          detailedMetricsEnabled: true,
+          ThrottlingRateLimit: 0.2,
+          ThrottlingBurstLimit: 2,
+          DetailedMetricsEnabled: true,
         },
       },
       accessLogSettings: {
