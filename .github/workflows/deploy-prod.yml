@@ -34,7 +34,7 @@ jobs:
           set -o pipefail
           [[ "$TEST_RUN_ID" =~ ^[0-9]+$ ]]
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TEST_RUN_ID" | node scripts/verify-test-promotion.mjs
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
