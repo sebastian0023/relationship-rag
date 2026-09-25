@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
+    "declaration": false,
+    "types": ["node"]
+  },
+  "include": ["e2e-release/**/*.ts", "playwright.release.config.ts"]
+}

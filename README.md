@@ -98,3 +98,12 @@ Phase 7 adds privacy-safe structured telemetry, correlated API responses, bounde
 stage budgets with operator notifications, and same-region recovery controls. See
 [`docs/operations/phase-7-operations.md`](./docs/operations/phase-7-operations.md) for alarm smoke
 tests, restore drills, incident response, and the manual billing-tag prerequisite.
+
+## Production release
+
+Phase 8 provides immutable release bundles, a synthetic AWS acceptance/RAG suite, protected production
+promotion, and explicit release finalization after onboarding and 24-hour observation. It does not
+mark an undeployed or unverified system as released. Follow the
+[release and rollback runbook](docs/operations/phase-8-release.md) and complete the
+[acceptance evidence](docs/operations/phase-8-evidence-template.md). Production credentials and real
+memories never enter CI. No HTTP API or user-data migration is required.

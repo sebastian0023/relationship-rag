@@ -7,7 +7,9 @@ export default defineConfig({
   testDir: './e2e-live',
   timeout: 60_000,
   retries: 1,
-  use: { baseURL, trace: 'retain-on-failure', screenshot: 'only-on-failure' },
+  use: { baseURL, trace: 'off', screenshot: 'off', video: 'off' },
   projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
-  reporter: [['list'], ['html', { outputFolder: 'phase7-evidence/playwright', open: 'never' }]],
+  reporter: [
+    ['./e2e-release/safe-reporter.ts', { outputFile: 'phase7-evidence/live-summary.json' }],
+  ],
 });

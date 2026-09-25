@@ -1,0 +1,39 @@
+name: Bootstrap synthetic test stage
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: relationship-rag-phase7-test
+  cancel-in-progress: false
+jobs:
+  bootstrap:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: test
+    timeout-minutes: 45
+    env:
+      ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+      EXPECTED_AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci && npm run verify
+      - name: Require operator notification address
+        run: node -e 'if (!/^\S+@\S+\.\S+$/.test(process.env.ALERT_EMAIL || "")) process.exit(1)'
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+      - name: Deploy empty test stage only
+        run: |
+          node --input-type=module -e 'import {verifyAccount} from "./scripts/release/io.mjs"; verifyAccount();'
+          npx cdk deploy --context stage=test --context "alertEmail=$ALERT_EMAIL" --all --require-approval never > "$RUNNER_TEMP/test-bootstrap.log" 2>&1
+          node scripts/release/publish-stage.mjs test
+          echo 'Test stage deployed. Provision synthetic identities, confirm the SNS subscription, and complete the operational drills before running a release candidate.' >> "$GITHUB_STEP_SUMMARY"

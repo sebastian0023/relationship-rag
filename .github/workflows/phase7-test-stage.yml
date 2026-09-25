@@ -26,7 +26,7 @@ jobs:
       - run: npm run verify
       - name: Validate protected inputs
         env:
-          ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
           TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
           TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
         run: node scripts/phase7-live-inputs.mjs
@@ -35,29 +35,15 @@ jobs:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
       - name: Deploy test stacks
-        run: >-
-          npm run --workspace @relationship-rag/infrastructure synth --
-          --context stage=test --context alertEmail='${{ vars.ALERT_EMAIL }}' >/dev/null &&
-          npx cdk deploy --app 'node apps/infrastructure/dist/bin/app.js'
-          --context stage=test --context alertEmail='${{ vars.ALERT_EMAIL }}'
-          --all --require-approval never
-      - name: Publish frontend and runtime configuration
         env:
-          AWS_PAGER: ''
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+        run: npx cdk deploy --context stage=test --context "alertEmail=$ALERT_EMAIL" --all --require-approval never
+      - name: Publish frontend and runtime configuration
         run: |
-          api_origin=$(aws cloudformation describe-stacks --stack-name relationship-rag-test-api --query "Stacks[0].Outputs[?OutputKey=='ApiEndpoint'].OutputValue | [0]" --output text)
-          authority=$(aws cloudformation describe-stacks --stack-name relationship-rag-test-auth --query "Stacks[0].Outputs[?OutputKey=='UserPoolIssuer'].OutputValue | [0]" --output text)
-          client_id=$(aws cloudformation describe-stacks --stack-name relationship-rag-test-auth --query "Stacks[0].Outputs[?OutputKey=='UserPoolClientId'].OutputValue | [0]" --output text)
-          frontend_bucket=$(aws cloudformation describe-stacks --stack-name relationship-rag-test-edge --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue | [0]" --output text)
-          distribution_id=$(aws cloudformation describe-stacks --stack-name relationship-rag-test-edge --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue | [0]" --output text)
+          node scripts/release/publish-stage.mjs test
           distribution_domain=$(aws cloudformation describe-stacks --stack-name relationship-rag-test-edge --query "Stacks[0].Outputs[?OutputKey=='DistributionDomainName'].OutputValue | [0]" --output text)
-          API_ORIGIN="$api_origin" AUTHORITY="$authority" CLIENT_ID="$client_id" node -e "const fs = require('node:fs'); fs.writeFileSync('apps/web/dist/relationship-rag-web/browser/assets/runtime-config.json', JSON.stringify({ apiOrigin: process.env.API_ORIGIN, authority: process.env.AUTHORITY, clientId: process.env.CLIENT_ID, scope: 'openid profile email relationship-rag/access' }));"
-          aws s3 sync apps/web/dist/relationship-rag-web/browser "s3://$frontend_bucket" --delete --exclude index.html --cache-control 'public, max-age=31536000, immutable'
-          aws s3 cp apps/web/dist/relationship-rag-web/browser/index.html "s3://$frontend_bucket/index.html" --cache-control 'no-cache, no-store, must-revalidate'
-          aws cloudfront create-invalidation --distribution-id "$distribution_id" --paths / /index.html /assets/runtime-config.json
           echo "PHASE7_BASE_URL=https://$distribution_domain" >> "$GITHUB_ENV"
           mkdir -p phase7-evidence
-          printf '# Phase 7 test-stage evidence\n\n- Commit: `%s`\n- Workflow run: `%s`\n- Region: `%s`\n- Started (UTC): `%s`\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$AWS_REGION" "$(date -u +%FT%TZ)" > phase7-evidence/run.md
       - run: npx playwright install --with-deps chromium
       - name: Run deployed authentication and accessibility smoke test
         env:

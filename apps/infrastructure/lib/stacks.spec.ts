@@ -262,3 +262,58 @@ describe('privacy infrastructure', () => {
     });
   });
 });
+
+describe('production release protections', () => {
+  const prod: StageConfig = {
+    ...dev,
+    stage: 'prod',
+    retainData: true,
+    deletionProtection: true,
+    logRetentionDays: 90,
+    monthlyBudgetUsd: 50,
+  };
+  it('retains and protects production canonical data and identities', () => {
+    const app = new cdk.App();
+    const data = Template.fromStack(new DataStack(app, 'prod-data', { config: prod }));
+    data.hasResource('AWS::DynamoDB::Table', {
+      DeletionPolicy: 'Retain',
+      UpdateReplacePolicy: 'Retain',
+      Properties: Match.objectLike({
+        DeletionProtectionEnabled: true,
+        PointInTimeRecoverySpecification: {
+          PointInTimeRecoveryEnabled: true,
+          RecoveryPeriodInDays: 35,
+        },
+      }),
+    });
+    data.allResources('AWS::S3::Bucket', {
+      DeletionPolicy: 'Retain',
+      UpdateReplacePolicy: 'Retain',
+    });
+    const auth = Template.fromStack(
+      new AuthStack(new cdk.App(), 'prod-auth', {
+        config: prod,
+        frontendDomain: 'frontend.example.test',
+      }),
+    );
+    auth.hasResource('AWS::Cognito::UserPool', {
+      DeletionPolicy: 'Retain',
+      Properties: Match.objectLike({
+        DeletionProtection: 'ACTIVE',
+        AdminCreateUserConfig: { AllowAdminCreateUserOnly: true },
+      }),
+    });
+  });
+  it('honors no-store on runtime configuration and HTML without deleting old assets', () => {
+    const app = new cdk.App();
+    const edge = Template.fromStack(new EdgeStack(app, 'prod-edge', { config: prod }));
+    edge.hasResourceProperties('AWS::CloudFront::CachePolicy', {
+      CachePolicyConfig: Match.objectLike({ MinTTL: 0, DefaultTTL: 0, MaxTTL: 31536000 }),
+    });
+    edge.hasResource('AWS::S3::Bucket', {
+      DeletionPolicy: 'Retain',
+      UpdateReplacePolicy: 'Retain',
+    });
+    edge.resourceCountIs('Custom::S3AutoDeleteObjects', 0);
+  });
+});

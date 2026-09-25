@@ -1,0 +1,101 @@
+name: Release candidate
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Exact 40-character commit SHA reachable from main
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+concurrency:
+  group: relationship-rag-phase7-test
+  cancel-in-progress: false
+jobs:
+  candidate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: test
+    timeout-minutes: 90
+    env:
+      RELEASE_COMMIT: ${{ inputs.commit }}
+      RELEASE_DIR: release-bundle
+      RELEASE_STAGE: test
+      RELEASE_ASSEMBLY: cdk.out.bundle
+      EXPECTED_AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      RELEASE_BUCKET: ${{ vars.RELEASE_BUCKET }}
+      ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_OWNER_USERNAME: ${{ secrets.TEST_USERNAME }}
+      RELEASE_OWNER_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+      RELEASE_PARTNER_USERNAME: ${{ secrets.TEST_PARTNER_USERNAME }}
+      RELEASE_PARTNER_PASSWORD: ${{ secrets.TEST_PARTNER_PASSWORD }}
+      RELEASE_OUTSIDER_USERNAME: ${{ secrets.TEST_OUTSIDER_USERNAME }}
+      RELEASE_OUTSIDER_PASSWORD: ${{ secrets.TEST_OUTSIDER_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci && npm run --workspace @relationship-rag/contracts build
+      - name: Validate inputs before cloud writes
+        run: |
+          node scripts/release/preflight.mjs candidate
+          git merge-base --is-ancestor "$RELEASE_COMMIT" origin/main
+      - run: npm run format:check && npm run lint && npm run typecheck && npm run test:coverage
+      - run: npm run rag:chat-eval && npm run rag:card-eval && npm run phase7:guardrails
+      - run: npm audit --omit=dev --audit-level=high
+      - name: Scan repository history for secrets
+        run: >-
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3
+          git /repo --config /repo/.gitleaks.toml --redact --no-banner --exit-code 1
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e -- --project=chromium
+      - run: npm run build
+      - name: Verify production approval protection
+        run: npm run release -- protection
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+      - name: Verify private release storage and account
+        run: node scripts/release/preflight.mjs storage
+      - name: Build Lambda assets once and seal candidate
+        run: |
+          npx cdk synth --context stage=test --context "alertEmail=$ALERT_EMAIL" --output "$RELEASE_ASSEMBLY" > "$RUNNER_TEMP/bundle-synth.log" 2>&1
+          mkdir -p "$RELEASE_DIR"
+          release_digest=$(node scripts/release/cli.mjs package)
+          echo "RELEASE_DIGEST=$release_digest" >> "$GITHUB_ENV"
+      - name: Deploy the sealed executable assets to test
+        run: |
+          npm run release -- verify
+          npx cdk synth --context stage=test --context "alertEmail=$ALERT_EMAIL" --context "releaseAssets=$PWD/$RELEASE_DIR/payload/lambda" --output cdk.out.test > "$RUNNER_TEMP/test-synth.log" 2>&1
+          npx cdk deploy --app cdk.out.test --all --require-approval never > "$RUNNER_TEMP/test-deploy.log" 2>&1
+          npm run release -- publish
+          npm run release -- smoke
+      - name: Execute real AWS acceptance and RAG evaluation
+        run: npm run test:e2e:release
+      - name: Trigger phase 7 test alarm
+        run: npm run phase7:alarm-smoke -- --stage test --confirm > "$RUNNER_TEMP/alarm-smoke.log" 2>&1
+      - name: Retain verified candidate in private versioned storage
+        run: |
+          tar -czf "$RUNNER_TEMP/bundle.tgz" "$RELEASE_DIR"
+          aws s3 cp "$RUNNER_TEMP/bundle.tgz" "s3://$RELEASE_BUCKET/candidates/$RELEASE_COMMIT/$RELEASE_DIGEST/bundle.tgz" --only-show-errors
+          aws s3 cp release-evidence/live-report.json "s3://$RELEASE_BUCKET/candidates/$RELEASE_COMMIT/$RELEASE_DIGEST/live-report.json" --only-show-errors
+          # shellcheck disable=SC2016
+          printf 'Candidate: `%s`\n\nBundle digest: `%s`\n\nOperational attestation is still required before promotion.\n' "$RELEASE_COMMIT" "$RELEASE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sanitized-release-evidence
+          path: release-evidence/live-report.json
+          if-no-files-found: ignore
+          retention-days: 30

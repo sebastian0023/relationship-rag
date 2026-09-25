@@ -5,3 +5,8 @@ coverage
 cdk.out
 package-lock.json
 Relationship_RAG_Project_Blueprint.md
+
+cdk.out*/
+release-bundle/
+release-evidence/
+phase7-evidence/

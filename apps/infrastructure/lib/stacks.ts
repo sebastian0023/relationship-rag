@@ -25,6 +25,20 @@ import { resolve } from 'node:path';
 import type { Construct } from 'constructs';
 import type { StageConfig } from './config.js';
 
+// Release promotion supplies previously built Lambda assets. Normal development still bundles.
+class ApplicationFunction extends lambdaNodejs.NodejsFunction {
+  public constructor(scope: Construct, id: string, props: lambdaNodejs.NodejsFunctionProps) {
+    const assets: unknown = scope.node.tryGetContext('releaseAssets');
+    super(
+      scope,
+      id,
+      typeof assets === 'string'
+        ? { ...props, code: lambda.Code.fromAsset(resolve(assets, id)), handler: 'index.handler' }
+        : props,
+    );
+  }
+}
+
 interface RelationshipStackProps extends cdk.StackProps {
   readonly config: StageConfig;
   readonly frontendDomain?: string;
@@ -142,7 +156,7 @@ export class DataStack extends cdk.Stack {
       evaluationPeriods: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
-    const photoProcessor = new lambdaNodejs.NodejsFunction(this, 'PhotoProcessorFunction', {
+    const photoProcessor = new ApplicationFunction(this, 'PhotoProcessorFunction', {
       runtime: lambda.Runtime.NODEJS_22_X,
       entry: resolve(process.cwd(), 'services/memories/src/handlers/process-photo.ts'),
       handler: 'handler',
@@ -297,13 +311,30 @@ export class EdgeStack extends cdk.Stack {
       defaultBehavior: {
         origin: origins.S3BucketOrigin.withOriginAccessControl(this.frontendBucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        cachePolicy: new cloudfront.CachePolicy(this, 'FrontendCache', {
+          minTtl: cdk.Duration.seconds(0),
+          defaultTtl: cdk.Duration.seconds(0),
+          maxTtl: cdk.Duration.days(365),
+          enableAcceptEncodingGzip: true,
+          enableAcceptEncodingBrotli: true,
+        }),
         compress: true,
         responseHeadersPolicy: securityHeaders,
       },
       defaultRootObject: 'index.html',
       errorResponses: [
-        { httpStatus: 403, responseHttpStatus: 200, responsePagePath: '/index.html' },
-        { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html' },
+        {
+          httpStatus: 403,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html',
+          ttl: cdk.Duration.seconds(0),
+        },
+        {
+          httpStatus: 404,
+          responseHttpStatus: 200,
+          responsePagePath: '/index.html',
+          ttl: cdk.Duration.seconds(0),
+        },
       ],
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
     });
@@ -425,7 +456,7 @@ export class AiStack extends cdk.Stack {
       schedule: events.Schedule.rate(cdk.Duration.minutes(1)),
       targets: [new eventTargets.SqsQueue(ingestionQueue)],
     });
-    const coordinator = new lambdaNodejs.NodejsFunction(this, 'IngestionCoordinatorFunction', {
+    const coordinator = new ApplicationFunction(this, 'IngestionCoordinatorFunction', {
       runtime: lambda.Runtime.NODEJS_22_X,
       entry: resolve(process.cwd(), 'services/memories/src/handlers/process-ingestion.ts'),
       handler: 'handler',
@@ -549,7 +580,7 @@ export class ApiStack extends cdk.Stack {
       retention: logRetentionFor(props.config),
       removalPolicy: removalPolicyFor(props.config),
     });
-    const getMeFunction = new lambdaNodejs.NodejsFunction(this, 'GetMeFunction', {
+    const getMeFunction = new ApplicationFunction(this, 'GetMeFunction', {
       runtime: lambda.Runtime.NODEJS_22_X,
       entry: resolve(process.cwd(), 'services/identity/src/handlers/get-me.ts'),
       handler: 'handler',
@@ -592,7 +623,7 @@ export class ApiStack extends cdk.Stack {
       retention: logRetentionFor(props.config),
       removalPolicy: removalPolicyFor(props.config),
     });
-    const memoriesFunction = new lambdaNodejs.NodejsFunction(this, 'MemoriesFunction', {
+    const memoriesFunction = new ApplicationFunction(this, 'MemoriesFunction', {
       runtime: lambda.Runtime.NODEJS_22_X,
       entry: resolve(process.cwd(), 'services/memories/src/handlers/memories.ts'),
       handler: 'handler',
@@ -649,7 +680,7 @@ export class ApiStack extends cdk.Stack {
       retention: logRetentionFor(props.config),
       removalPolicy: removalPolicyFor(props.config),
     });
-    const chatFunction = new lambdaNodejs.NodejsFunction(this, 'ChatFunction', {
+    const chatFunction = new ApplicationFunction(this, 'ChatFunction', {
       runtime: lambda.Runtime.NODEJS_22_X,
       entry: resolve(process.cwd(), 'services/chat/src/handlers/chat.ts'),
       handler: 'handler',
@@ -727,7 +758,7 @@ export class ApiStack extends cdk.Stack {
       retention: logRetentionFor(props.config),
       removalPolicy: removalPolicyFor(props.config),
     });
-    const cardsFunction = new lambdaNodejs.NodejsFunction(this, 'CardsFunction', {
+    const cardsFunction = new ApplicationFunction(this, 'CardsFunction', {
       runtime: lambda.Runtime.NODEJS_22_X,
       entry: resolve(process.cwd(), 'services/cards/src/handlers/cards.ts'),
       handler: 'handler',
@@ -816,7 +847,7 @@ export class ApiStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
 
-    const inboxFunction = new lambdaNodejs.NodejsFunction(this, 'InboxFunction', {
+    const inboxFunction = new ApplicationFunction(this, 'InboxFunction', {
       runtime: lambda.Runtime.NODEJS_22_X,
       entry: resolve(process.cwd(), 'services/notifications/src/handlers/inbox.ts'),
       handler: 'handler',
@@ -969,7 +1000,7 @@ export class MessagingStack extends cdk.Stack {
     this.deliveryQueue.grantSendMessages(this.schedulerRole);
     this.deadLetterQueue.grantSendMessages(this.schedulerRole);
 
-    const worker = new lambdaNodejs.NodejsFunction(this, 'DeliveryWorkerFunction', {
+    const worker = new ApplicationFunction(this, 'DeliveryWorkerFunction', {
       runtime: lambda.Runtime.NODEJS_22_X,
       entry: resolve(process.cwd(), 'services/notifications/src/handlers/process-delivery.ts'),
       handler: 'handler',
@@ -992,27 +1023,23 @@ export class MessagingStack extends cdk.Stack {
     props.applicationTable.grantReadWriteData(worker);
     addFunctionHealthAlarms(this, 'DeliveryWorker', worker, 8_000, false);
 
-    const failureArchiver = new lambdaNodejs.NodejsFunction(
-      this,
-      'DeliveryFailureArchiverFunction',
-      {
-        runtime: lambda.Runtime.NODEJS_22_X,
-        entry: resolve(
-          process.cwd(),
-          'services/notifications/src/handlers/archive-delivery-failure.ts',
-        ),
-        handler: 'handler',
-        timeout: cdk.Duration.seconds(10),
-        memorySize: 256,
-        tracing: lambda.Tracing.ACTIVE,
-        logGroup: functionLogGroup(this, 'DeliveryFailureArchiver', props.config),
-        environment: {
-          APPLICATION_TABLE_NAME: props.applicationTable.tableName,
-          STAGE: props.config.stage,
-        },
-        bundling: { minify: true, sourceMap: true },
+    const failureArchiver = new ApplicationFunction(this, 'DeliveryFailureArchiverFunction', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      entry: resolve(
+        process.cwd(),
+        'services/notifications/src/handlers/archive-delivery-failure.ts',
+      ),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 256,
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: functionLogGroup(this, 'DeliveryFailureArchiver', props.config),
+      environment: {
+        APPLICATION_TABLE_NAME: props.applicationTable.tableName,
+        STAGE: props.config.stage,
       },
-    );
+      bundling: { minify: true, sourceMap: true },
+    });
     failureArchiver.addEventSource(
       new lambdaEventSources.SqsEventSource(this.deadLetterQueue, {
         batchSize: 10,
@@ -1022,30 +1049,26 @@ export class MessagingStack extends cdk.Stack {
     props.applicationTable.grantReadWriteData(failureArchiver);
     addFunctionHealthAlarms(this, 'DeliveryFailureArchiver', failureArchiver, 8_000);
 
-    const coordinator = new lambdaNodejs.NodejsFunction(
-      this,
-      'DeliveryDispatchCoordinatorFunction',
-      {
-        runtime: lambda.Runtime.NODEJS_22_X,
-        entry: resolve(process.cwd(), 'services/notifications/src/handlers/dispatch-deliveries.ts'),
-        handler: 'handler',
-        timeout: cdk.Duration.seconds(30),
-        memorySize: 256,
-        reservedConcurrentExecutions: 1,
-        tracing: lambda.Tracing.ACTIVE,
-        logGroup: functionLogGroup(this, 'DeliveryDispatchCoordinator', props.config),
-        environment: {
-          APPLICATION_TABLE_NAME: props.applicationTable.tableName,
-          COUPLE_ID: props.config.coupleId,
-          DELIVERY_QUEUE_URL: this.deliveryQueue.queueUrl,
-          DELIVERY_QUEUE_ARN: this.deliveryQueue.queueArn,
-          SCHEDULER_ROLE_ARN: this.schedulerRole.roleArn,
-          SCHEDULER_DLQ_ARN: this.deadLetterQueue.queueArn,
-          STAGE: props.config.stage,
-        },
-        bundling: { minify: true, sourceMap: true },
+    const coordinator = new ApplicationFunction(this, 'DeliveryDispatchCoordinatorFunction', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      entry: resolve(process.cwd(), 'services/notifications/src/handlers/dispatch-deliveries.ts'),
+      handler: 'handler',
+      timeout: cdk.Duration.seconds(30),
+      memorySize: 256,
+      reservedConcurrentExecutions: 1,
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: functionLogGroup(this, 'DeliveryDispatchCoordinator', props.config),
+      environment: {
+        APPLICATION_TABLE_NAME: props.applicationTable.tableName,
+        COUPLE_ID: props.config.coupleId,
+        DELIVERY_QUEUE_URL: this.deliveryQueue.queueUrl,
+        DELIVERY_QUEUE_ARN: this.deliveryQueue.queueArn,
+        SCHEDULER_ROLE_ARN: this.schedulerRole.roleArn,
+        SCHEDULER_DLQ_ARN: this.deadLetterQueue.queueArn,
+        STAGE: props.config.stage,
       },
-    );
+      bundling: { minify: true, sourceMap: true },
+    });
     props.applicationTable.grantReadWriteData(coordinator);
     addFunctionHealthAlarms(this, 'DeliveryDispatchCoordinator', coordinator, 25_000, false);
     this.deliveryQueue.grantSendMessages(coordinator);

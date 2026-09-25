@@ -13,3 +13,8 @@ cdk.out/
 playwright-report/
 test-results/
 
+release-bundle/
+release-evidence/
+phase7-evidence/
+
+cdk.out*/
