@@ -19,7 +19,14 @@ const timelineKey = (memory: Memory) => ({
   PK: `COUPLE#${memory.coupleId}`,
   SK: `MEMORY#${memory.occurredOn}#${memory.memoryId}`,
 });
-const toItem = (memory: Memory, keys: object) => ({ ...keys, entityType: 'MEMORY', ...memory });
+const toItem = (memory: Memory, keys: object) => ({ ...memory, ...keys, entityType: 'MEMORY' });
+const fromItem = (item: Record<string, unknown>): Memory => {
+  const { PK, SK, entityType, ...memory } = item;
+  void PK;
+  void SK;
+  void entityType;
+  return memory as unknown as Memory;
+};
 const ingestionKey = (coupleId: string, memoryId: string) => ({
   PK: `COUPLE#${coupleId}`,
   SK: `INGESTION#${memoryId}`,
@@ -105,7 +112,7 @@ export class DynamoDbMemoryRepository implements MemoryRepository {
         ConsistentRead: true,
       }),
     );
-    return (result.Item as Memory | undefined) ?? null;
+    return result.Item === undefined ? null : fromItem(result.Item);
   }
   public async listTimeline(
     coupleId: string,
@@ -133,7 +140,7 @@ export class DynamoDbMemoryRepository implements MemoryRepository {
         ? undefined
         : Buffer.from(JSON.stringify(result.LastEvaluatedKey)).toString('base64url');
     return {
-      items: (result.Items ?? []) as Memory[],
+      items: (result.Items ?? []).map(fromItem),
       ...(nextCursor === undefined ? {} : { nextCursor }),
     };
   }
