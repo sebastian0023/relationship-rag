@@ -14,6 +14,10 @@ deployed domain.
    Titan Text Embeddings V2, Bedrock Knowledge Bases, S3 Vectors, Lambda, and CloudFront. Resolve
    any access or quota issue before deploying. Bootstrap the account/region with
    `npx cdk bootstrap aws://<ACCOUNT_ID>/us-east-1` from an approved operator session.
+   This shared account currently has a Lambda concurrency limit of 10. The stage configs set
+   `reserveLambdaConcurrency=false` so deployments use that account-wide cap while the quota
+   increase request is pending. Review Lambda throttles during validation and restore per-function
+   reservations only after the limit supports them plus 10 unreserved executions (ADR 0009).
 3. Reuse the existing GitHub OIDC provider `token.actions.githubusercontent.com`, with audience
    `sts.amazonaws.com`. Create separate test and production deployment roles. Restrict their
    trust to this repository's `test` or `prod` environment, respectively, and to `refs/heads/main`.

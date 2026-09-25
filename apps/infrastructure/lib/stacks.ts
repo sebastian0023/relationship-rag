@@ -449,7 +449,7 @@ export class AiStack extends cdk.Stack {
       handler: 'handler',
       timeout: cdk.Duration.minutes(1),
       memorySize: 512,
-      reservedConcurrentExecutions: 1,
+      ...(props.config.reserveLambdaConcurrency ? { reservedConcurrentExecutions: 1 } : {}),
       tracing: lambda.Tracing.ACTIVE,
       logGroup: functionLogGroup(this, 'IngestionCoordinator', props.config),
       environment: {
@@ -673,7 +673,9 @@ export class ApiStack extends cdk.Stack {
       handler: 'handler',
       timeout: cdk.Duration.seconds(28),
       memorySize: 1024,
-      reservedConcurrentExecutions: props.config.aiReservedConcurrency,
+      ...(props.config.reserveLambdaConcurrency
+        ? { reservedConcurrentExecutions: props.config.aiReservedConcurrency }
+        : {}),
       tracing: lambda.Tracing.ACTIVE,
       adotInstrumentation,
       environment: {
@@ -751,7 +753,9 @@ export class ApiStack extends cdk.Stack {
       handler: 'handler',
       timeout: cdk.Duration.seconds(28),
       memorySize: 1024,
-      reservedConcurrentExecutions: props.config.aiReservedConcurrency,
+      ...(props.config.reserveLambdaConcurrency
+        ? { reservedConcurrentExecutions: props.config.aiReservedConcurrency }
+        : {}),
       tracing: lambda.Tracing.ACTIVE,
       adotInstrumentation,
       environment: {
@@ -1049,7 +1053,7 @@ export class MessagingStack extends cdk.Stack {
         handler: 'handler',
         timeout: cdk.Duration.seconds(30),
         memorySize: 256,
-        reservedConcurrentExecutions: 1,
+        ...(props.config.reserveLambdaConcurrency ? { reservedConcurrentExecutions: 1 } : {}),
         tracing: lambda.Tracing.ACTIVE,
         logGroup: functionLogGroup(this, 'DeliveryDispatchCoordinator', props.config),
         environment: {

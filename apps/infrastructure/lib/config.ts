@@ -13,6 +13,7 @@ export interface StageConfig {
   readonly apiRateLimit: number;
   readonly apiBurstLimit: number;
   readonly aiReservedConcurrency: number;
+  readonly reserveLambdaConcurrency: boolean;
   readonly aiDeadlineMs: number;
   readonly backupRetentionDays: number;
 }
@@ -66,6 +67,7 @@ export const loadStageConfig = (stage: string): StageConfig => {
     apiRateLimit: requirePositiveNumber(record, 'apiRateLimit'),
     apiBurstLimit: requirePositiveNumber(record, 'apiBurstLimit'),
     aiReservedConcurrency: requirePositiveNumber(record, 'aiReservedConcurrency'),
+    reserveLambdaConcurrency: requireBoolean(record, 'reserveLambdaConcurrency'),
     aiDeadlineMs: requirePositiveNumber(record, 'aiDeadlineMs'),
     backupRetentionDays: requirePositiveNumber(record, 'backupRetentionDays'),
   };

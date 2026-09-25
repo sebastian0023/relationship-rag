@@ -23,10 +23,16 @@ const dev: StageConfig = {
   apiRateLimit: 10,
   apiBurstLimit: 20,
   aiReservedConcurrency: 2,
+  reserveLambdaConcurrency: true,
   aiDeadlineMs: 24_000,
   backupRetentionDays: 35,
 };
-const testStage: StageConfig = { ...dev, stage: 'test', coupleId: 'couple-test' };
+const testStage: StageConfig = {
+  ...dev,
+  stage: 'test',
+  coupleId: 'couple-test',
+  reserveLambdaConcurrency: false,
+};
 const prodStage: StageConfig = {
   ...testStage,
   stage: 'prod',
@@ -230,6 +236,47 @@ describe('privacy infrastructure', () => {
         DeletionPolicy: 'Retain',
         UpdateReplacePolicy: 'Retain',
       });
+    }
+  });
+
+  it('uses the account concurrency limit when reservations are disabled', () => {
+    const app = new cdk.App();
+    const data = new DataStack(app, 'data-test', { config: testStage });
+    const auth = new AuthStack(app, 'auth-test', {
+      config: testStage,
+      frontendDomain: 'frontend.example.test',
+    });
+    const ai = new AiStack(app, 'ai-test', {
+      config: testStage,
+      sourceBucket: data.ragSourceBucket,
+      applicationTable: data.applicationTable,
+    });
+    const messaging = new MessagingStack(app, 'messaging-test', {
+      config: testStage,
+      applicationTable: data.applicationTable,
+    });
+    const api = new ApiStack(app, 'api-test', {
+      config: testStage,
+      applicationTable: data.applicationTable,
+      userPool: auth.userPool,
+      userPoolClient: auth.userPoolClient,
+      issuer: auth.issuer,
+      frontendDomain: 'frontend.example.test',
+      mediaBucket: data.mediaBucket,
+      knowledgeBaseId: ai.knowledgeBaseId,
+      inferenceProfileArn: ai.inferenceProfileArn,
+      deliveryQueue: messaging.deliveryQueue,
+      deliveryDlq: messaging.deadLetterQueue,
+      schedulerRole: messaging.schedulerRole,
+    });
+
+    for (const stack of [data, ai, messaging, api]) {
+      const functions = Object.values(
+        Template.fromStack(stack).findResources('AWS::Lambda::Function'),
+      );
+      expect(functions.length).toBeGreaterThan(0);
+      for (const fn of functions)
+        expect(fn.Properties?.ReservedConcurrentExecutions).toBeUndefined();
     }
   });
 

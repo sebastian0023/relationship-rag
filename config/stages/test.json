@@ -8,6 +8,7 @@
   "apiRateLimit": 10,
   "apiBurstLimit": 20,
   "aiReservedConcurrency": 2,
+  "reserveLambdaConcurrency": false,
   "aiDeadlineMs": 24000,
   "backupRetentionDays": 35
 }
