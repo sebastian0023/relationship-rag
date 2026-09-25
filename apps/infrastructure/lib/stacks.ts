@@ -352,6 +352,7 @@ export class AiStack extends cdk.Stack {
     const vectorBucket = new s3vectors.CfnVectorBucket(this, 'VectorBucket', {
       vectorBucketName: `relationship-rag-${props.config.stage}-${cdk.Aws.ACCOUNT_ID}-vectors`,
     });
+    vectorBucket.applyRemovalPolicy(removalPolicyFor(props.config));
     const vectorIndex = new s3vectors.CfnIndex(this, 'VectorIndex', {
       vectorBucketArn: vectorBucket.attrVectorBucketArn,
       indexName: `relationship-rag-${props.config.stage}-memories`,
@@ -360,6 +361,7 @@ export class AiStack extends cdk.Stack {
       distanceMetric: 'cosine',
       metadataConfiguration: { nonFilterableMetadataKeys: ['AMAZON_BEDROCK_TEXT'] },
     });
+    vectorIndex.applyRemovalPolicy(removalPolicyFor(props.config));
     const knowledgeBaseRole = new iam.Role(this, 'KnowledgeBaseRole', {
       assumedBy: new iam.ServicePrincipal('bedrock.amazonaws.com'),
     });
@@ -403,11 +405,16 @@ export class AiStack extends cdk.Stack {
         },
       },
     });
+    knowledgeBase.applyRemovalPolicy(removalPolicyFor(props.config));
     knowledgeBase.addResourceDependency(vectorIndex);
+    knowledgeBase.addDependency(
+      (knowledgeBaseRole.node.findChild('DefaultPolicy') as iam.Policy).node
+        .defaultChild as iam.CfnPolicy,
+    );
     const dataSource = new bedrock.CfnDataSource(this, 'MemorySource', {
       knowledgeBaseId: knowledgeBase.attrKnowledgeBaseId,
       name: 'memory-documents',
-      dataDeletionPolicy: 'DELETE',
+      dataDeletionPolicy: props.config.retainData ? 'RETAIN' : 'DELETE',
       dataSourceConfiguration: {
         type: 'S3',
         s3Configuration: { bucketArn: props.sourceBucket.bucketArn },
@@ -419,6 +426,7 @@ export class AiStack extends cdk.Stack {
         },
       },
     });
+    dataSource.applyRemovalPolicy(removalPolicyFor(props.config));
     const ingestionDlq = new sqs.Queue(this, 'IngestionDeadLetterQueue', {
       encryption: sqs.QueueEncryption.SQS_MANAGED,
       retentionPeriod: cdk.Duration.days(14),

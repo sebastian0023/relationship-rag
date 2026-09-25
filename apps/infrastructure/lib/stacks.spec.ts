@@ -1,7 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import { Match, Template } from 'aws-cdk-lib/assertions';
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { StageConfig } from './config.js';
 import {
   AiStack,
@@ -27,6 +27,13 @@ const dev: StageConfig = {
   backupRetentionDays: 35,
 };
 const testStage: StageConfig = { ...dev, stage: 'test', coupleId: 'couple-test' };
+const prodStage: StageConfig = {
+  ...testStage,
+  stage: 'prod',
+  coupleId: 'couple-prod',
+  deletionProtection: true,
+  retainData: true,
+};
 
 describe('privacy infrastructure', () => {
   it('disables CloudFront caching for runtime configuration', () => {
@@ -172,6 +179,11 @@ describe('privacy infrastructure', () => {
     template.hasResourceProperties('AWS::Bedrock::KnowledgeBase', {
       KnowledgeBaseConfiguration: Match.objectLike({ Type: 'VECTOR' }),
     });
+    expect(template.toJSON().Resources['KnowledgeBase'].DependsOn).toContain(
+      Object.keys(template.findResources('AWS::IAM::Policy')).find((id) =>
+        id.startsWith('KnowledgeBaseRoleDefaultPolicy'),
+      ),
+    );
     template.hasResourceProperties('AWS::Bedrock::DataSource', {
       VectorIngestionConfiguration: Match.objectLike({
         ChunkingConfiguration: Match.objectLike({ ChunkingStrategy: 'FIXED_SIZE' }),
@@ -185,6 +197,33 @@ describe('privacy infrastructure', () => {
         { Key: 'Environment', Value: 'dev' },
       ]),
     });
+  });
+
+  it('retains production vector data and knowledge base resources', () => {
+    const app = new cdk.App();
+    const data = new DataStack(app, 'data-prod', { config: prodStage });
+    const template = Template.fromStack(
+      new AiStack(app, 'ai-prod', {
+        config: prodStage,
+        sourceBucket: data.ragSourceBucket,
+        applicationTable: data.applicationTable,
+      }),
+    );
+
+    template.hasResourceProperties('AWS::Bedrock::DataSource', { DataDeletionPolicy: 'RETAIN' });
+    for (const type of [
+      'AWS::S3Vectors::VectorBucket',
+      'AWS::S3Vectors::Index',
+      'AWS::Bedrock::KnowledgeBase',
+      'AWS::Bedrock::DataSource',
+    ]) {
+      const resources = Object.values(template.findResources(type));
+      expect(resources).toHaveLength(1);
+      expect(resources[0]).toMatchObject({
+        DeletionPolicy: 'Retain',
+        UpdateReplacePolicy: 'Retain',
+      });
+    }
   });
 
   it('enables same-region recovery controls outside development', () => {
