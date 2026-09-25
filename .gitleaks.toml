@@ -1,0 +1,13 @@
+# Keep default rules. This single fixed test idempotency value is not a credential.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Fixed synthetic idempotency key in the card service regression test"
+condition = "AND"
+paths = ['''^services/cards/src/application/card-service\.spec\.ts$''']
+regexTarget = "line"
+regexes = ['''idempotencyKey\s*:\s*['"]past-delivery-1234['"]''']

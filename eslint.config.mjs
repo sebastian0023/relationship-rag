@@ -4,7 +4,15 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/coverage/**', '**/.angular/**', '**/cdk.out/**'],
+    ignores: [
+      '**/dist/**',
+      '**/coverage/**',
+      '**/.angular/**',
+      '**/cdk.out*/**',
+      'release-bundle/**',
+      'release-evidence/**',
+      'phase7-evidence/**',
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,

@@ -1,0 +1,124 @@
+name: Promote production release
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Verified candidate commit
+        required: true
+        type: string
+      digest:
+        description: Verified bundle manifest SHA-256
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+concurrency:
+  group: relationship-rag-production
+  cancel-in-progress: false
+jobs:
+  review:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: prod-review
+    timeout-minutes: 30
+    outputs:
+      assembly_digest: ${{ steps.assembly.outputs.digest }}
+    env:
+      RELEASE_COMMIT: ${{ inputs.commit }}
+      RELEASE_DIGEST: ${{ inputs.digest }}
+      RELEASE_DIR: release-bundle
+      RELEASE_STAGE: prod
+      EXPECTED_AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      RELEASE_BUCKET: ${{ vars.RELEASE_BUCKET }}
+      ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_ATTESTATION: release-evidence/attestation.json
+      RELEASE_REPORT: release-evidence/live-report.json
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci && npm run --workspace @relationship-rag/contracts build && npm run --workspace @relationship-rag/infrastructure build
+      - run: node scripts/release/preflight.mjs promotion && npm run release -- protection
+      - run: git merge-base --is-ancestor "$RELEASE_COMMIT" origin/main
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+      - name: Retrieve candidate and operational attestation
+        run: |
+          node scripts/release/preflight.mjs storage
+          mkdir -p release-evidence
+          aws s3 cp "s3://$RELEASE_BUCKET/candidates/$RELEASE_COMMIT/$RELEASE_DIGEST/bundle.tgz" "$RUNNER_TEMP/bundle.tgz" --only-show-errors
+          python3 scripts/release/extract.py "$RUNNER_TEMP/bundle.tgz" release-bundle
+          aws s3 cp "s3://$RELEASE_BUCKET/candidates/$RELEASE_COMMIT/$RELEASE_DIGEST/live-report.json" "$RELEASE_REPORT" --only-show-errors
+          aws s3 cp "s3://$RELEASE_BUCKET/candidates/$RELEASE_COMMIT/$RELEASE_DIGEST/attestation.json" "$RELEASE_ATTESTATION" --only-show-errors
+          npm run release -- evidence
+      - name: Prepare concrete production diff
+        run: |
+          npx cdk synth --context stage=prod --context "alertEmail=$ALERT_EMAIL" --context "releaseAssets=$PWD/$RELEASE_DIR/payload/lambda" --output cdk.out.prod > "$RUNNER_TEMP/prod-synth.log" 2>&1
+          npx cdk diff --app cdk.out.prod --all --no-change-set > "$RUNNER_TEMP/production.diff" 2>&1
+          aws s3 cp "$RUNNER_TEMP/production.diff" "s3://$RELEASE_BUCKET/reviews/$GITHUB_RUN_ID/production.diff" --only-show-errors
+      - name: Seal reviewed assembly
+        id: assembly
+        run: |
+          tar -czf "$RUNNER_TEMP/assembly.tgz" cdk.out.prod
+          assembly_digest=$(sha256sum "$RUNNER_TEMP/assembly.tgz" | cut -d ' ' -f 1)
+          echo "digest=$assembly_digest" >> "$GITHUB_OUTPUT"
+          aws s3 cp "$RUNNER_TEMP/assembly.tgz" "s3://$RELEASE_BUCKET/reviews/$GITHUB_RUN_ID/assembly.tgz" --only-show-errors
+          # shellcheck disable=SC2016
+          printf 'Review candidate `%s`, bundle `%s`, assembly `%s`.\n\nReview the private production diff under this workflow run ID and approve only if replacements and evidence are acceptable.\n' "$RELEASE_COMMIT" "$RELEASE_DIGEST" "$assembly_digest" >> "$GITHUB_STEP_SUMMARY"
+  deploy:
+    needs: review
+    runs-on: ubuntu-latest
+    environment: prod
+    timeout-minutes: 45
+    env:
+      RELEASE_COMMIT: ${{ inputs.commit }}
+      RELEASE_DIGEST: ${{ inputs.digest }}
+      ASSEMBLY_DIGEST: ${{ needs.review.outputs.assembly_digest }}
+      RELEASE_DIR: release-bundle
+      RELEASE_STAGE: prod
+      EXPECTED_AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      RELEASE_BUCKET: ${{ vars.RELEASE_BUCKET }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.commit }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci && npm run --workspace @relationship-rag/contracts build
+      - run: npm run release -- protection
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+      - name: Deploy approved assembly and unchanged assets
+        run: |
+          node scripts/release/preflight.mjs storage
+          aws s3 cp "s3://$RELEASE_BUCKET/reviews/$GITHUB_RUN_ID/assembly.tgz" "$RUNNER_TEMP/assembly.tgz" --only-show-errors
+          printf '%s  %s\n' "$ASSEMBLY_DIGEST" "$RUNNER_TEMP/assembly.tgz" | sha256sum --check --status
+          python3 scripts/release/extract.py "$RUNNER_TEMP/assembly.tgz" cdk.out.prod
+          aws s3 cp "s3://$RELEASE_BUCKET/candidates/$RELEASE_COMMIT/$RELEASE_DIGEST/bundle.tgz" "$RUNNER_TEMP/bundle.tgz" --only-show-errors
+          python3 scripts/release/extract.py "$RUNNER_TEMP/bundle.tgz" release-bundle
+          npm run release -- verify
+          npx cdk deploy --app cdk.out.prod --all --require-approval never > "$RUNNER_TEMP/prod-deploy.log" 2>&1
+          npm run release -- publish
+          npm run release -- smoke
+          printf '{"commit":"%s","bundleDigest":"%s","assemblyDigest":"%s","deployedAt":"%s"}\n' "$RELEASE_COMMIT" "$RELEASE_DIGEST" "$ASSEMBLY_DIGEST" "$(date -u +%FT%TZ)" > "$RUNNER_TEMP/deployment.json"
+          aws s3 cp "$RUNNER_TEMP/deployment.json" "s3://$RELEASE_BUCKET/deployments/$GITHUB_RUN_ID.json" --only-show-errors
+          echo 'Deployment smoke passed. Explicit onboarding and 24-hour observation are still required; no release tag has been created.' >> "$GITHUB_STEP_SUMMARY"

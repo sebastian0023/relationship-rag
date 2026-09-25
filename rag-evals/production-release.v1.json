@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "minimumRecall": 0.9,
+  "minimumAbstentionRate": 0.95,
+  "memories": [
+    {
+      "key": "anniversary",
+      "title": "Our anniversary in Oaxaca",
+      "occurredOn": "2024-06-12",
+      "body": "We celebrated our anniversary in Oaxaca on June 12, 2024. We visited the botanical garden.",
+      "locale": "en",
+      "tags": ["release-fixture"],
+      "category": "travel"
+    },
+    {
+      "key": "dinner",
+      "title": "Nuestra cena especial",
+      "occurredOn": "2025-02-14",
+      "body": "El 14 de febrero de 2025 cocinamos mole en casa para nuestra cena especial.",
+      "locale": "es",
+      "tags": ["release-fixture"],
+      "category": "food"
+    },
+    {
+      "key": "beach",
+      "title": "Our beach picnic",
+      "occurredOn": "2025-05-01",
+      "body": "We had a picnic at the beach in Mazunte on May 1, 2025.",
+      "locale": "en",
+      "tags": ["release-fixture"],
+      "category": "travel"
+    }
+  ],
+  "cases": [
+    {
+      "id": "known-anniversary",
+      "question": "Where did we celebrate our anniversary?",
+      "expectedKeys": ["anniversary"],
+      "requiredFacts": ["Oaxaca"],
+      "forbiddenFacts": ["Paris", "Cancun"],
+      "abstention": false
+    },
+    {
+      "id": "spanish-dinner",
+      "question": "¿Qué cocinamos para nuestra cena especial?",
+      "expectedKeys": ["dinner"],
+      "requiredFacts": ["mole"],
+      "forbiddenFacts": ["sushi"],
+      "abstention": false
+    },
+    {
+      "id": "filtered-date",
+      "question": "What did we do at the beach in May 2025?",
+      "filters": { "occurredOnFrom": "2025-05-01", "occurredOnTo": "2025-05-31" },
+      "expectedKeys": ["beach"],
+      "requiredFacts": ["picnic"],
+      "forbiddenFacts": ["Cancun"],
+      "abstention": false
+    },
+    {
+      "id": "foreign-decoy",
+      "question": "Which beach did we visit together?",
+      "expectedKeys": ["beach"],
+      "requiredFacts": ["Mazunte"],
+      "forbiddenFacts": ["Cancun"],
+      "abstention": false
+    },
+    {
+      "id": "unknown-pet",
+      "question": "What is our dog's name?",
+      "expectedKeys": [],
+      "requiredFacts": [],
+      "forbiddenFacts": ["Rex"],
+      "abstention": true
+    },
+    {
+      "id": "unknown-wedding",
+      "question": "¿En qué ciudad nos casamos?",
+      "expectedKeys": [],
+      "requiredFacts": [],
+      "forbiddenFacts": ["Paris"],
+      "abstention": true
+    }
+  ]
+}

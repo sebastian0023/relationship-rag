@@ -19,7 +19,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc -p tsconfig.release.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
@@ -32,7 +32,10 @@
     "delivery:replay": "node scripts/replay-delivery.mjs",
     "phase7:guardrails": "node scripts/phase7-guardrails.mjs",
     "phase7:alarm-smoke": "node scripts/phase7-alarm-smoke.mjs",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run rag:chat-eval && npm run rag:card-eval && npm run phase7:guardrails && npm run build && npm run synth"
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run rag:chat-eval && npm run rag:card-eval && npm run phase7:guardrails && npm run build && npm run synth",
+    "release": "node scripts/release/cli.mjs",
+    "test:e2e:release": "playwright test --config playwright.release.config.ts",
+    "release:finalize": "node scripts/release/finalize.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
