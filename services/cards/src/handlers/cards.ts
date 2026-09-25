@@ -216,6 +216,14 @@ export const createCardsHandler = (
         correlationId,
         statusCode: status,
         traceId: currentTraceId(),
+        ...(status >= 500
+          ? {
+              failureType:
+                caught instanceof Error && /^[A-Za-z][A-Za-z0-9]{0,79}$/.test(caught.name)
+                  ? caught.name
+                  : 'Unknown',
+            }
+          : {}),
       });
       if (status >= 500) metrics.put('DependencyFailure', 1);
       const error: ApiError = {
