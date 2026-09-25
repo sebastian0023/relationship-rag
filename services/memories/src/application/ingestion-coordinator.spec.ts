@@ -90,8 +90,10 @@ describe('IngestionCoordinator', () => {
       async delete() {},
     };
     let status: 'IN_PROGRESS' | 'COMPLETE' = 'IN_PROGRESS';
+    let submittedToken = '';
     const knowledgeBase: KnowledgeBaseIngestion = {
-      async start() {
+      async start(token) {
+        submittedToken = token;
         return 'job-1';
       },
       async status() {
@@ -109,6 +111,7 @@ describe('IngestionCoordinator', () => {
     );
     await coordinator.run();
     expect(puts).toBe(1);
+    expect(submittedToken).toMatch(/^[a-f0-9]{64}$/);
     expect(repository.batch?.jobId).toBe('job-1');
     status = 'COMPLETE';
     await coordinator.run();

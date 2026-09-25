@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type { Logger, Metrics } from '@relationship-rag/observability';
 import type { MemoryRepository } from './memory-repository.js';
 import { normalizeMemoryDocument } from './memory-document.js';
@@ -69,12 +70,10 @@ export class IngestionCoordinator {
     }
     if (accepted.length === 0) return;
     try {
-      const jobId = await this.knowledgeBase.start(
-        accepted
-          .map((item) => `${item.memoryId}:${item.generation}`)
-          .join('|')
-          .slice(0, 64),
-      );
+      const clientToken = createHash('sha256')
+        .update(accepted.map((item) => `${item.memoryId}:${item.generation}`).join('|'))
+        .digest('hex');
+      const jobId = await this.knowledgeBase.start(clientToken);
       await this.repository.saveIngestionBatch(this.coupleId, {
         jobId,
         startedAt: this.clock().toISOString(),
