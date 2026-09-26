@@ -27,6 +27,28 @@ const canonical = { PK: 'COUPLE#couple-1', SK: 'MEMORY_ID#memory-1' };
 const timeline = { PK: 'COUPLE#couple-1', SK: 'MEMORY#2025-05-10#memory-1' };
 
 describe('DynamoDbMemoryRepository', () => {
+  it('completes successful ingestion without marshalling an undefined failure code', async () => {
+    const send = vi.fn(async (_command: unknown) => ({}));
+    const repository = new DynamoDbMemoryRepository('test-table', {
+      send,
+    } as unknown as DynamoDBDocumentClient);
+
+    await repository.completeIngestion('couple-1', 'memory-1', 2, 'INDEXED');
+
+    const transaction = send.mock.calls[0]?.[0] as TransactWriteCommand;
+    const update = transaction.input.TransactItems?.[0]?.Update;
+    expect(update?.UpdateExpression).toContain('REMOVE failureCode');
+    expect(update?.ExpressionAttributeValues).toEqual({
+      ':status': 'INDEXED',
+      ':generation': 2,
+      ':updatedAt': expect.any(String),
+    });
+    expect(transaction.input.TransactItems?.[1]?.Delete?.Key).toEqual({
+      PK: 'COUPLE#couple-1',
+      SK: 'INGESTION_WORK#memory-1',
+    });
+  });
+
   it('keeps storage keys out of domain memories and writes distinct rows on update', async () => {
     const send = vi.fn(async (command: unknown) => {
       if (command instanceof GetCommand)

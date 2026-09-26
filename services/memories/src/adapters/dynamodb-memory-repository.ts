@@ -239,7 +239,7 @@ export class DynamoDbMemoryRepository implements MemoryRepository {
       ':status': status,
       ':generation': generation,
       ':updatedAt': new Date().toISOString(),
-      ':failureCode': failureCode,
+      ...(failureCode === undefined ? {} : { ':failureCode': failureCode }),
     };
     await this.client.send(
       new TransactWriteCommand({
@@ -249,7 +249,9 @@ export class DynamoDbMemoryRepository implements MemoryRepository {
               TableName: this.tableName,
               Key: ingestionKey(coupleId, memoryId),
               UpdateExpression:
-                'SET #status = :status, indexedAt = :updatedAt, failureCode = :failureCode',
+                failureCode === undefined
+                  ? 'SET #status = :status, indexedAt = :updatedAt REMOVE failureCode'
+                  : 'SET #status = :status, indexedAt = :updatedAt, failureCode = :failureCode',
               ConditionExpression: 'generation = :generation',
               ExpressionAttributeNames: { '#status': 'status' },
               ExpressionAttributeValues: values,
