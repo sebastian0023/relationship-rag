@@ -51,7 +51,7 @@ jobs:
           test -n "$AWS_ROLE_ARN"
           test "$AWS_REGION" = us-east-1
           ALERT_EMAIL="$ALERT_EMAIL" node --input-type=module -e 'if (!/^\S+@\S+\.\S+$/.test(process.env.ALERT_EMAIL ?? "")) process.exit(1)'
-      - uses: aws-actions/configure-aws-credentials@v5
+      - uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: us-east-1
