@@ -74,7 +74,9 @@ jobs:
           PHASE7_TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
         run: npm run test:e2e:live
       - name: Publish alarm smoke metric
-        run: npm run phase7:alarm-smoke -- --stage test --confirm | tee phase7-evidence/alarm-smoke.txt
+        run: |
+          set -o pipefail
+          npm run phase7:alarm-smoke -- --stage test --confirm | tee phase7-evidence/alarm-smoke.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:

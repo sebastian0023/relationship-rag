@@ -52,6 +52,12 @@ cat > "$tmp_dir/permissions.json" <<EOF
     },
     {
       "Effect": "Allow",
+      "Action": "cloudwatch:PutMetricData",
+      "Resource": "*",
+      "Condition": {"StringEquals": {"cloudwatch:namespace": "RelationshipRag"}}
+    },
+    {
+      "Effect": "Allow",
       "Action": "s3:ListBucket",
       "Resource": "arn:aws:s3:::relationship-rag-$stage-edge-*"
     },
