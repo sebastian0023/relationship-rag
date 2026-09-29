@@ -47,18 +47,24 @@ export const expectAccessible = async (page: Page) => {
   ).toEqual([]);
 };
 
-/** Fails the test if any element overflows the viewport horizontally. */
+/**
+ * Fails the test if any element overflows the viewport horizontally. Content inside an intentional
+ * horizontal scroller, marked with `data-scroll-x` (such as a row of filter chips), may extend.
+ */
 export const expectNoHorizontalOverflow = async (page: Page) => {
-  const overflowing = await page.evaluate(() =>
-    Array.from(document.querySelectorAll<HTMLElement>('body *'))
+  const overflowing = await page.evaluate(() => {
+    const clipped = (element: HTMLElement) =>
+      (element.parentElement?.closest('[data-scroll-x]') ?? null) !== null;
+    return Array.from(document.querySelectorAll<HTMLElement>('body *'))
       .filter((element) => {
         const bounds = element.getBoundingClientRect();
         return (
           element.getClientRects().length > 0 &&
-          (bounds.left < -1 || bounds.right > window.innerWidth + 1)
+          (bounds.left < -1 || bounds.right > window.innerWidth + 1) &&
+          !clipped(element)
         );
       })
-      .map((element) => ({ tag: element.tagName, className: String(element.className) })),
-  );
+      .map((element) => ({ tag: element.tagName, className: String(element.className) }));
+  });
   expect(overflowing).toEqual([]);
 };

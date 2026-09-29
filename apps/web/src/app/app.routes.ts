@@ -1,9 +1,19 @@
-import type { Routes } from '@angular/router';
+import type { Routes, UrlMatcher } from '@angular/router';
 import { authenticatedGuard } from './auth/auth.guard.js';
 import { unsavedChangesGuard } from './ui/unsaved-changes.guard.js';
 import type { ShellRouteData } from './app-shell.component.js';
 
 const shell = (data: ShellRouteData): ShellRouteData => data;
+
+/**
+ * `chat` and `chat/:conversationId` share one route so the conversation screen survives the
+ * navigation that follows creating a conversation on the first question.
+ */
+export const chatMatcher: UrlMatcher = (segments) => {
+  const [first, id, ...rest] = segments;
+  if (first?.path !== 'chat' || rest.length > 0) return null;
+  return { consumed: segments, posParams: id === undefined ? {} : { conversationId: id } };
+};
 
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'login' },
@@ -66,15 +76,9 @@ export const routes: Routes = [
           import('./memory-editor.component.js').then((m) => m.MemoryEditorComponent),
       },
       {
-        path: 'chat',
+        matcher: chatMatcher,
         title: 'Conversar · Nuestra historia',
-        data: shell({ tab: 'chat', legacy: true }),
-        loadComponent: () => import('./chat.component.js').then((m) => m.ChatComponent),
-      },
-      {
-        path: 'chat/:conversationId',
-        title: 'Conversar · Nuestra historia',
-        data: shell({ tab: 'chat', legacy: true }),
+        data: shell({ tab: 'chat', fill: true }),
         loadComponent: () => import('./chat.component.js').then((m) => m.ChatComponent),
       },
       {
