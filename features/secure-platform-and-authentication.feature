@@ -28,3 +28,10 @@ Feature: Secure platform and authentication
     Given the Cognito managed login page
     When a visitor tries to register an account
     Then no self-registration path is available
+
+  Scenario: An invited member signs out
+    Given an active browser session for an invited member
+    When the member selects Sign out
+    Then the browser clears the local session
+    And Cognito receives the client ID and an allowed logout URI
+    And the browser returns to the public login page

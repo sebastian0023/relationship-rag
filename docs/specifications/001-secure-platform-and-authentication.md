@@ -24,3 +24,5 @@ The two invited members of one couple can sign in through Cognito managed login,
 ## Access pattern and telemetry
 
 The profile handler makes one strongly consistent `GetItem` through its repository. It logs only event name, opaque request ID, opaque subject ID, result code, and latency. Provisioning uses conditional profile and membership writes so retries are safe and a third account or role replacement is rejected.
+
+Sign-out removes the browser session and redirects through Cognito managed login's `/logout` endpoint with the app client ID and its registered `logout_uri`. Cognito returns the browser to the public app entrypoint. The browser does not send tokens or private content in the logout URL.

@@ -69,12 +69,18 @@ export class AuthService {
   }
 
   public async signOut(): Promise<void> {
-    if (this.manager === undefined) {
+    const config = this.config;
+    if (this.manager === undefined || config === null) {
       await this.router.navigateByUrl('/');
       return;
     }
     await this.clearSession('anonymous');
-    await this.manager.signoutRedirect({ post_logout_redirect_uri: `${window.location.origin}/` });
+    await this.manager.signoutRedirect({
+      extraQueryParams: {
+        client_id: config.clientId,
+        logout_uri: `${window.location.origin}/`,
+      },
+    });
   }
 
   private createManager(): UserManager {
@@ -84,7 +90,6 @@ export class AuthService {
       authority: config.authority,
       client_id: config.clientId,
       redirect_uri: `${window.location.origin}/auth/callback`,
-      post_logout_redirect_uri: `${window.location.origin}/`,
       response_type: 'code',
       scope: config.scope,
       userStore: new WebStorageStateStore({ store: window.sessionStorage }),
