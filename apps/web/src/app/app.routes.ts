@@ -84,22 +84,30 @@ export const routes: Routes = [
       {
         path: 'cards',
         title: 'Tarjetas · Nuestra historia',
-        data: shell({ tab: 'cards', legacy: true }),
+        data: shell({ tab: 'cards' }),
         loadComponent: () => import('./card-list.component.js').then((m) => m.CardListComponent),
       },
       {
-        path: 'cards/new',
-        title: 'Nueva tarjeta · Nuestra historia',
-        data: shell({ tab: 'cards', subpage: true, legacy: true }),
+        // `new` is a card ID placeholder, so saving a new draft keeps the same editor instance.
+        path: 'cards/:cardId',
+        title: 'Tarjeta · Nuestra historia',
+        data: shell({ tab: 'cards', subpage: true, bottomBar: true }),
+        canDeactivate: [unsavedChangesGuard],
         loadComponent: () =>
           import('./card-editor.component.js').then((m) => m.CardEditorComponent),
       },
       {
-        path: 'cards/:cardId',
-        title: 'Tarjeta · Nuestra historia',
-        data: shell({ tab: 'cards', subpage: true, legacy: true }),
+        path: 'cards/:cardId/review',
+        title: 'Revisar envío · Nuestra historia',
+        data: shell({ tab: 'cards', subpage: true }),
         loadComponent: () =>
-          import('./card-editor.component.js').then((m) => m.CardEditorComponent),
+          import('./card-review.component.js').then((m) => m.CardReviewComponent),
+      },
+      {
+        path: 'cards/:cardId/view',
+        title: 'Tarjeta enviada · Nuestra historia',
+        data: shell({ tab: 'cards', subpage: true }),
+        loadComponent: () => import('./card-view.component.js').then((m) => m.CardViewComponent),
       },
       {
         path: 'inbox',

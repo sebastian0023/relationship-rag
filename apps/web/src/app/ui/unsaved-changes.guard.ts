@@ -2,11 +2,16 @@ import type { CanDeactivateFn } from '@angular/router';
 
 /** A screen that may hold unsaved text and asks before it is discarded. */
 export interface GuardsUnsavedChanges {
-  canLeave(): boolean | Promise<boolean>;
+  /** `nextUrl` lets a screen allow destinations that keep its unsaved text. */
+  canLeave(nextUrl: string): boolean | Promise<boolean>;
 }
 
-export const unsavedChangesGuard: CanDeactivateFn<GuardsUnsavedChanges> = (component) =>
-  component.canLeave();
+export const unsavedChangesGuard: CanDeactivateFn<GuardsUnsavedChanges> = (
+  component,
+  _route,
+  _state,
+  next,
+) => component.canLeave(next.url);
 
 /**
  * The «¿Salir sin guardar?» decision: resolves `true` to discard or `false` to keep editing.

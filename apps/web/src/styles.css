@@ -362,6 +362,12 @@
     outline-offset: 2px;
   }
 
+  /* Focus ring for any custom choice that wraps a visually hidden input. */
+  .nh-foco-interno:has(input:focus-visible) {
+    outline: 3px solid var(--color-accion);
+    outline-offset: 2px;
+  }
+
   .nh-opcion:has(input:disabled) {
     opacity: 0.45;
     cursor: not-allowed;

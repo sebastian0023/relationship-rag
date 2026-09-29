@@ -75,7 +75,7 @@ import { LeaveDecision, type GuardsUnsavedChanges } from './ui/unsaved-changes.g
             </h1>
             <span
               aria-live="polite"
-              class="min-w-[88px] pr-2 text-right text-[12.5px] font-semibold text-[#B5763A]"
+              class="min-w-[88px] pr-2 text-right text-[12.5px] font-semibold text-[#8A5A1F]"
               >{{ dirty() ? '● Sin guardar' : '' }}</span
             >
           </div>
