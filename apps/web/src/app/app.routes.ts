@@ -1,5 +1,6 @@
 import type { Routes } from '@angular/router';
 import { authenticatedGuard } from './auth/auth.guard.js';
+import { unsavedChangesGuard } from './ui/unsaved-changes.guard.js';
 import type { ShellRouteData } from './app-shell.component.js';
 
 const shell = (data: ShellRouteData): ShellRouteData => data;
@@ -38,27 +39,29 @@ export const routes: Routes = [
       {
         path: 'timeline',
         title: 'Recuerdos · Nuestra historia',
-        data: shell({ tab: 'timeline', legacy: true }),
+        data: shell({ tab: 'timeline' }),
         loadComponent: () => import('./timeline.component.js').then((m) => m.TimelineComponent),
       },
       {
         path: 'timeline/new',
         title: 'Nuevo recuerdo · Nuestra historia',
-        data: shell({ tab: 'timeline', subpage: true, legacy: true }),
+        data: shell({ tab: 'timeline', subpage: true, bottomBar: true }),
+        canDeactivate: [unsavedChangesGuard],
         loadComponent: () =>
           import('./memory-editor.component.js').then((m) => m.MemoryEditorComponent),
       },
       {
         path: 'timeline/:memoryId',
         title: 'Recuerdo · Nuestra historia',
-        data: shell({ tab: 'timeline', subpage: true, legacy: true }),
+        data: shell({ tab: 'timeline', subpage: true }),
         loadComponent: () =>
           import('./memory-detail.component.js').then((m) => m.MemoryDetailComponent),
       },
       {
         path: 'timeline/:memoryId/edit',
         title: 'Editar recuerdo · Nuestra historia',
-        data: shell({ tab: 'timeline', subpage: true, legacy: true }),
+        data: shell({ tab: 'timeline', subpage: true, bottomBar: true }),
+        canDeactivate: [unsavedChangesGuard],
         loadComponent: () =>
           import('./memory-editor.component.js').then((m) => m.MemoryEditorComponent),
       },

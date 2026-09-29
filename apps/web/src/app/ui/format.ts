@@ -92,6 +92,16 @@ export const formatInstantWithTime = (isoDateTime: string, timeZone?: string): s
   return `${longLabel(parts)}, ${parts.hour}:${parts.minute}`;
 };
 
+/** `hace un momento`, `hace 5 minutos`, `hace 2 horas`, or `el 14 de septiembre de 2026`. */
+export const relativeTime = (isoDateTime: string, now: Date, timeZone?: string): string => {
+  const minutes = Math.floor((now.getTime() - new Date(isoDateTime).getTime()) / 60_000);
+  if (minutes < 1) return 'hace un momento';
+  if (minutes < 60) return minutes === 1 ? 'hace 1 minuto' : `hace ${minutes} minutos`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours === 1 ? 'hace 1 hora' : `hace ${hours} horas`;
+  return `el ${formatLongInstant(isoDateTime, timeZone)}`;
+};
+
 /** `2026-09-14` → `Septiembre de 2026`. */
 export const monthGroupLabel = (isoDate: string): string => {
   const { year, month } = calendarParts(isoDate);

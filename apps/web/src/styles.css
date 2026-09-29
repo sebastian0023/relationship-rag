@@ -204,6 +204,47 @@
     color: var(--color-papel);
   }
 
+  .nh-btn-peligro-contorno {
+    border: 1.5px solid var(--color-error);
+    background: var(--color-papel);
+    color: var(--color-error);
+  }
+
+  .nh-btn-accion-contorno {
+    border: 1.5px solid var(--color-accion);
+    background: var(--color-papel);
+    color: var(--color-accion);
+  }
+
+  /* Full-width decision buttons inside panels. */
+  .nh-btn-panel {
+    width: 100%;
+    min-height: 52px;
+    font-size: 16px;
+  }
+
+  .nh-panel-titulo {
+    margin: 0;
+    font: 500 24px/1.25 var(--font-titulo);
+  }
+
+  .nh-panel-texto {
+    margin: 0;
+    color: var(--color-ciruela-medio);
+    font: 400 15.5px/1.55 var(--font-texto);
+  }
+
+  .nh-alerta {
+    display: flex;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid #e9b1aa;
+    border-radius: 12px;
+    background: #fff1ef;
+    color: #8a2b25;
+    font: 500 14.5px/1.5 var(--font-texto);
+  }
+
   .nh-campo {
     width: 100%;
     min-height: 50px;
@@ -294,8 +335,12 @@
     background: var(--color-papel);
   }
 
+  /* A pill-shaped choice wrapping a visually hidden native radio or checkbox. */
   .nh-opcion {
+    display: flex;
     flex: 1;
+    align-items: center;
+    justify-content: center;
     min-height: 46px;
     padding: 0 12px;
     border-radius: var(--radius-campo);
@@ -303,13 +348,23 @@
     background: var(--color-papel);
     color: var(--color-ciruela);
     font: 600 15px/1.2 var(--font-texto);
+    text-align: center;
     cursor: pointer;
   }
 
-  .nh-opcion[aria-checked='true'],
-  .nh-opcion[aria-pressed='true'] {
+  .nh-opcion:has(input:checked) {
     background: var(--color-ciruela);
     color: var(--color-papel);
+  }
+
+  .nh-opcion:has(input:focus-visible) {
+    outline: 3px solid var(--color-accion);
+    outline-offset: 2px;
+  }
+
+  .nh-opcion:has(input:disabled) {
+    opacity: 0.45;
+    cursor: not-allowed;
   }
 
   .nh-panel {

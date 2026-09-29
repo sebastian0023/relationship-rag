@@ -11,6 +11,7 @@ import {
   formatShortInstant,
   initialOf,
   monthGroupLabel,
+  relativeTime,
 } from './format.js';
 
 describe('calendar dates', () => {
@@ -33,6 +34,21 @@ describe('instants', () => {
     expect(formatShortInstant('2026-09-20T23:30:00.000Z', 'UTC')).toBe('20 sep 2026');
     expect(formatInstantWithTime('2026-10-14T07:00:00.000Z', 'Europe/Madrid')).toBe(
       '14 de octubre de 2026, 09:00',
+    );
+  });
+});
+
+describe('relativeTime', () => {
+  const now = new Date('2026-09-21T12:00:00.000Z');
+
+  it('describes recent changes in minutes or hours and older ones by date', () => {
+    expect(relativeTime('2026-09-21T11:59:40.000Z', now)).toBe('hace un momento');
+    expect(relativeTime('2026-09-21T11:59:00.000Z', now)).toBe('hace 1 minuto');
+    expect(relativeTime('2026-09-21T11:48:00.000Z', now)).toBe('hace 12 minutos');
+    expect(relativeTime('2026-09-21T11:00:00.000Z', now)).toBe('hace 1 hora');
+    expect(relativeTime('2026-09-21T07:00:00.000Z', now)).toBe('hace 5 horas');
+    expect(relativeTime('2026-09-18T10:00:00.000Z', now, 'UTC')).toBe(
+      'el 18 de septiembre de 2026',
     );
   });
 });
