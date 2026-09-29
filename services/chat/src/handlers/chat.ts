@@ -65,6 +65,7 @@ export const createChatHandler = (
   coupleId: string,
   knowledgeBaseId: string,
   logger: Logger = createJsonLogger(),
+  memberships: DynamoDBDocumentClient = DynamoDBDocumentClient.from(new DynamoDBClient({})),
 ) => {
   const conversations = new DynamoDbConversationRepository(tableName);
   const lookup = new DynamoDbCanonicalMemoryLookup(tableName);
@@ -80,7 +81,6 @@ export const createChatHandler = (
     Number(process.env['AI_DEADLINE_MS'] ?? 24_000),
   );
   const metrics = createMetrics('chat');
-  const memberships = DynamoDBDocumentClient.from(new DynamoDBClient({}));
   return async (event: Event): Promise<Response> => {
     const correlationId = event.requestContext.requestId;
     const startedAt = Date.now();
@@ -165,7 +165,9 @@ export const createChatHandler = (
             ? 404
             : caught instanceof ConflictError
               ? 409
-              : caught instanceof DomainError || caught instanceof SyntaxError
+              : caught instanceof DomainError ||
+                  caught instanceof SyntaxError ||
+                  (caught as { name?: string }).name === 'ZodError'
                 ? 400
                 : 503;
       logger.log(status >= 500 ? 'error' : 'warn', 'chat.request.completed', {

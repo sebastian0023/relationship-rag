@@ -8,6 +8,7 @@ import {
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { MemoryRepository } from '../application/memory-repository.js';
+import { DomainError } from '@relationship-rag/domain';
 import type { Memory } from '../domain/memory.js';
 import type { IngestionBatch, IngestionState, IngestionWork } from '../domain/ingestion.js';
 
@@ -123,8 +124,13 @@ export class DynamoDbMemoryRepository implements MemoryRepository {
       cursor === undefined
         ? undefined
         : (JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as Record<string, string>);
-    if (exclusiveStartKey !== undefined && exclusiveStartKey['PK'] !== `COUPLE#${coupleId}`)
-      return { items: [] };
+    if (
+      exclusiveStartKey !== undefined &&
+      (exclusiveStartKey['PK'] !== `COUPLE#${coupleId}` ||
+        typeof exclusiveStartKey['SK'] !== 'string' ||
+        !exclusiveStartKey['SK'].startsWith('MEMORY#'))
+    )
+      throw new DomainError('INVALID_CURSOR', 'Invalid timeline cursor.');
     const result = await this.client.send(
       new QueryCommand({
         TableName: this.tableName,

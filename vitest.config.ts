@@ -3,9 +3,16 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     include: ['{apps,packages,services}/**/*.spec.ts'],
+    testTimeout: 30_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
+      include: [
+        'services/**/src/application/**/*.ts',
+        'services/**/src/domain/**/*.ts',
+        'packages/contracts/src/**/*.ts',
+        'packages/domain/src/**/*.ts',
+      ],
       thresholds: { branches: 80, functions: 80, lines: 80, statements: 80 },
       exclude: ['**/*.spec.ts', '**/index.ts', 'apps/infrastructure/**'],
     },

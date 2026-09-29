@@ -49,6 +49,8 @@ npm run synth
 
 Run all gates with `npm run verify`.
 
+Before changing the frontend design, follow the [backend verification inventory](./docs/operations/backend-verification.md).
+
 ## Environments
 
 Stage settings live in `config/stages`. Select a stage for CDK with context:

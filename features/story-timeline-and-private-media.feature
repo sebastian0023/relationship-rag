@@ -9,10 +9,23 @@ Feature: Private shared story timeline
     When the other member saves version 3 first
     Then the stale update receives a conflict asking them to reload
 
+  Scenario: Preserve and clear a memory category
+    Given an active member creates a memory with a category
+    When either member opens that memory
+    Then the saved category is present
+    When the member edits the memory without a category
+    Then the saved category is cleared
+
   Scenario: Keep media private
     Given a member requests an allowed photo upload
     When they upload a JPEG within the size limit
     Then it is private until validated processing creates a ready photo
+
+  Scenario: Reject mislabeled or corrupt photo bytes
+    Given a photo upload slot declares JPEG
+    When the uploaded bytes contain PNG or invalid image data
+    Then processing marks the photo failed
+    And no display image is published
 
   Scenario: Hide another couple's memory
     Given a memory belongs to another couple

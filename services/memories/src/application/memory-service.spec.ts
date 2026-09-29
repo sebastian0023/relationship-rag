@@ -100,6 +100,25 @@ describe('MemoryService', () => {
       photos: [],
     });
   });
+  it('persists and clears an optional category on create and update', async () => {
+    const service = new MemoryService(new FakeRepository());
+    const memory = await service.create('couple-1', 'owner-1', {
+      ...request,
+      category: 'TRAVEL',
+    });
+    expect((await service.get('couple-1', memory.memoryId)).category).toBe('TRAVEL');
+    const updated = await service.update('couple-1', memory.memoryId, {
+      ...request,
+      category: 'DINNER',
+      version: memory.version,
+    });
+    expect(updated.category).toBe('DINNER');
+    const cleared = await service.update('couple-1', memory.memoryId, {
+      ...request,
+      version: updated.version,
+    });
+    expect(cleared.category).toBeUndefined();
+  });
   it('queues a new generation when content changes but not when photos change', async () => {
     const repository = new FakeRepository();
     const service = new MemoryService(repository);

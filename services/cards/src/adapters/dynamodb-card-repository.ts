@@ -6,7 +6,7 @@ import {
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb';
 import type { CardRecipient, DeliveryRecord, SendCardResponse } from '@relationship-rag/contracts';
-import { ConflictError } from '@relationship-rag/domain';
+import { ConflictError, DomainError } from '@relationship-rag/domain';
 import type { CardRepository, SelectedMemory } from '../application/ports.js';
 import type { Card } from '../domain/card.js';
 
@@ -169,7 +169,13 @@ export class DynamoDbCardRepository implements CardRepository {
   public async list(coupleId: string, senderUserId: string, cursor?: string, limit = 20) {
     const PK = senderPartition(coupleId, senderUserId);
     const start = decode(cursor);
-    if (start !== undefined && start['PK'] !== PK) return { items: [] };
+    if (
+      start !== undefined &&
+      (start['PK'] !== PK ||
+        typeof start['SK'] !== 'string' ||
+        !start['SK'].startsWith('CARD_CREATED#'))
+    )
+      throw new DomainError('INVALID_CURSOR', 'Invalid card cursor.');
     const result = await this.client.send(
       new QueryCommand({
         TableName: this.tableName,

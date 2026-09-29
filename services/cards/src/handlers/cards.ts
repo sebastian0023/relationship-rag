@@ -73,6 +73,7 @@ export const createCardsHandler = (
   schedulerRoleArn: string,
   schedulerDlqArn: string,
   logger: Logger = createJsonLogger(),
+  memberships: DynamoDBDocumentClient = DynamoDBDocumentClient.from(new DynamoDBClient({})),
 ) => {
   const repository = new DynamoDbCardRepository(tableName);
   const service = new CardService(
@@ -84,7 +85,6 @@ export const createCardsHandler = (
     Number(process.env['AI_DEADLINE_MS'] ?? 24_000),
   );
   const metrics = createMetrics('cards');
-  const memberships = DynamoDBDocumentClient.from(new DynamoDBClient({}));
   return async (event: Event): Promise<Response> => {
     const correlationId = event.requestContext.requestId;
     const startedAt = Date.now();

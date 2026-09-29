@@ -26,6 +26,7 @@ export class MemoryService {
       body: request.body,
       locale: request.locale,
       tags: request.tags,
+      ...(request.category === undefined ? {} : { category: request.category }),
       ...(request.location === undefined ? {} : { location: request.location }),
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -58,16 +59,11 @@ export class MemoryService {
   ): Promise<Memory> {
     const current = await this.get(coupleId, memoryId);
     if (current.version !== request.version) throw new ConflictError();
-    const withoutLocation =
-      request.location === undefined
-        ? (() => {
-            const { location: ignored, ...rest } = current;
-            void ignored;
-            return rest;
-          })()
-        : current;
+    const { category: oldCategory, location: oldLocation, ...withoutOptionalFields } = current;
+    void oldCategory;
+    void oldLocation;
     const memory: Memory = {
-      ...withoutLocation,
+      ...withoutOptionalFields,
       title: request.title,
       occurredOn: request.occurredOn,
       body: request.body,
@@ -75,6 +71,7 @@ export class MemoryService {
       tags: request.tags,
       updatedAt: now(),
       version: current.version + 1,
+      ...(request.category === undefined ? {} : { category: request.category }),
       ...(request.location === undefined ? {} : { location: request.location }),
     };
     await this.memories.update(memory, request.version);

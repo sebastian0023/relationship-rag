@@ -9,8 +9,10 @@ Either active member can create, update, view, and delete shared memories. Memor
 - Couple identity and creator identity come from the verified JWT membership, never request data.
 - Both active roles can manage shared memories. A memory outside the active couple returns `404` with no metadata.
 - Canonical and chronological DynamoDB records are written together. Updates require the current version and return `409` when stale.
+- Saved categories remain available in memory details and retrieval metadata; omitting a category on update clears it.
 - Uploaded bytes enter a private staging prefix only through a five-minute, exact-key presigned POST. The policy fixes the MIME type and size, and no staging object is ever rendered.
 - The API accepts at most ten photos per memory, each at most 10 MiB. Private display URLs expire after five minutes and are never stored in browser storage.
+- The photo processor checks decoded image format against the declared MIME type before creating display images.
 - Logs contain only opaque IDs, result codes, and latency; they exclude memory bodies, filenames, media keys, signed URLs, and tokens.
 
 ## Access patterns and failures

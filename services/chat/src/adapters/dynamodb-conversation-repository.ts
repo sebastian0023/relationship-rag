@@ -15,6 +15,7 @@ import {
   type ConversationSummary,
 } from '@relationship-rag/contracts';
 import type { ConversationRepository } from '../application/ports.js';
+import { DomainError } from '@relationship-rag/domain';
 import type { CanonicalMemoryLookup } from './bedrock-memory-retriever.js';
 
 const userPartition = (coupleId: string, userId: string) => `COUPLE#${coupleId}#USER#${userId}`;
@@ -130,6 +131,9 @@ export class DynamoDbConversationRepository implements ConversationRepository {
     cursor?: string,
     limit = 20,
   ): Promise<{ readonly items: readonly ConversationSummary[]; readonly nextCursor?: string }> {
+    const start = decode(cursor);
+    if (start !== undefined && !start.startsWith('CONVERSATION_CREATED#'))
+      throw new DomainError('INVALID_CURSOR', 'Invalid conversation cursor.');
     const result = await this.client.send(
       new QueryCommand({
         TableName: this.tableName,
@@ -140,9 +144,9 @@ export class DynamoDbConversationRepository implements ConversationRepository {
         },
         ScanIndexForward: false,
         Limit: limit,
-        ...(decode(cursor) === undefined
+        ...(start === undefined
           ? {}
-          : { ExclusiveStartKey: { PK: userPartition(coupleId, userId), SK: decode(cursor) } }),
+          : { ExclusiveStartKey: { PK: userPartition(coupleId, userId), SK: start } }),
       }),
     );
     const items = (result.Items ?? []).map((item) => conversationSummarySchema.parse(item));
@@ -161,6 +165,9 @@ export class DynamoDbConversationRepository implements ConversationRepository {
     limit = 20,
   ): Promise<Conversation | null> {
     const PK = userPartition(coupleId, userId);
+    const start = decode(cursor);
+    if (start !== undefined && !start.startsWith(`CONVERSATION#${conversationId}#TURN#`))
+      throw new DomainError('INVALID_CURSOR', 'Invalid conversation cursor.');
     const conversation = await this.client.send(
       new GetCommand({
         TableName: this.tableName,
@@ -176,7 +183,7 @@ export class DynamoDbConversationRepository implements ConversationRepository {
         ExpressionAttributeValues: { ':pk': PK, ':prefix': `CONVERSATION#${conversationId}#TURN#` },
         ScanIndexForward: false,
         Limit: limit,
-        ...(decode(cursor) === undefined ? {} : { ExclusiveStartKey: { PK, SK: decode(cursor) } }),
+        ...(start === undefined ? {} : { ExclusiveStartKey: { PK, SK: start } }),
       }),
     );
     return conversationSchema.parse({

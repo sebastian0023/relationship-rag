@@ -67,10 +67,10 @@ export const createMemoriesHandler = (
   coupleId: string,
   mediaBucket: string,
   logger: Logger = createJsonLogger(),
+  membershipClient: DynamoDBDocumentClient = DynamoDBDocumentClient.from(new DynamoDBClient({})),
+  s3: S3Client = new S3Client({}),
 ) => {
   const service = new MemoryService(new DynamoDbMemoryRepository(tableName));
-  const membershipClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
-  const s3 = new S3Client({});
   const metrics = createMetrics('memories');
   return async (event: Event): Promise<Response> => {
     const correlationId = event.requestContext.requestId;
@@ -187,7 +187,9 @@ export const createMemoriesHandler = (
             ? 404
             : caught instanceof ConflictError
               ? 409
-              : caught instanceof DomainError || caught instanceof SyntaxError
+              : caught instanceof DomainError ||
+                  caught instanceof SyntaxError ||
+                  (caught as { name?: string }).name === 'ZodError'
                 ? 400
                 : 500;
       logger.log(status >= 500 ? 'error' : 'warn', 'memories.request.completed', {

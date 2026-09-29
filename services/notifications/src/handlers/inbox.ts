@@ -9,7 +9,12 @@ import {
   type ApiError,
 } from '@relationship-rag/contracts';
 import { AuthorizationError, DomainError, ResourceNotFoundError } from '@relationship-rag/domain';
-import { createJsonLogger, createMetrics, currentTraceId } from '@relationship-rag/observability';
+import {
+  createJsonLogger,
+  createMetrics,
+  currentTraceId,
+  type Logger,
+} from '@relationship-rag/observability';
 import { DynamoDbDeliveryRepository } from '../adapters/dynamodb-delivery-repository.js';
 import { DeliveryService } from '../application/delivery.js';
 
@@ -44,10 +49,13 @@ const groups = (value: unknown): string[] =>
           .filter(Boolean)
       : [];
 
-export const createInboxHandler = (tableName: string, coupleId: string) => {
+export const createInboxHandler = (
+  tableName: string,
+  coupleId: string,
+  logger: Logger = createJsonLogger(),
+  client: DynamoDBDocumentClient = DynamoDBDocumentClient.from(new DynamoDBClient({})),
+) => {
   const service = new DeliveryService(new DynamoDbDeliveryRepository(tableName));
-  const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
-  const logger = createJsonLogger();
   const metrics = createMetrics('inbox');
   return async (event: Event): Promise<Response> => {
     const correlationId = event.requestContext.requestId;

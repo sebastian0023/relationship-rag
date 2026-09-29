@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "minimumRecallAt5": 0.9,
+  "minimumAbstentionRate": 0.95,
+  "cases": [
+    {
+      "id": "oaxaca-en-1",
+      "question": "Where did we celebrate the synthetic anniversary %TAG%?",
+      "expectedMemoryIndex": 0,
+      "requiredFact": "Oaxaca"
+    },
+    {
+      "id": "oaxaca-en-2",
+      "question": "Name the place of our synthetic anniversary %TAG%.",
+      "expectedMemoryIndex": 0,
+      "requiredFact": "Oaxaca"
+    },
+    {
+      "id": "oaxaca-en-3",
+      "question": "In which city did the synthetic anniversary happen %TAG%?",
+      "expectedMemoryIndex": 0,
+      "requiredFact": "Oaxaca"
+    },
+    {
+      "id": "oaxaca-es-1",
+      "question": "¿Dónde celebramos el aniversario sintético %TAG%?",
+      "expectedMemoryIndex": 0,
+      "requiredFact": "Oaxaca"
+    },
+    {
+      "id": "oaxaca-es-2",
+      "question": "¿Qué lugar aparece en el recuerdo del aniversario sintético %TAG%?",
+      "expectedMemoryIndex": 0,
+      "requiredFact": "Oaxaca"
+    },
+    {
+      "id": "mole-en-1",
+      "question": "What did we cook for the synthetic dinner %TAG%?",
+      "expectedMemoryIndex": 1,
+      "requiredFact": "mole"
+    },
+    {
+      "id": "mole-en-2",
+      "question": "Name the food from the synthetic dinner %TAG%.",
+      "expectedMemoryIndex": 1,
+      "requiredFact": "mole"
+    },
+    {
+      "id": "mole-en-3",
+      "question": "Which dish is in the synthetic dinner memory %TAG%?",
+      "expectedMemoryIndex": 1,
+      "requiredFact": "mole"
+    },
+    {
+      "id": "mole-es-1",
+      "question": "¿Qué cocinamos en la cena sintética %TAG%?",
+      "expectedMemoryIndex": 1,
+      "requiredFact": "mole"
+    },
+    {
+      "id": "mole-es-2",
+      "question": "¿Cuál fue el platillo de la cena sintética %TAG%?",
+      "expectedMemoryIndex": 1,
+      "requiredFact": "mole"
+    },
+    {
+      "id": "unknown-dog-en",
+      "question": "What was our synthetic dog's name %TAG%?",
+      "abstain": true
+    },
+    {
+      "id": "unknown-dog-es",
+      "question": "¿Cómo se llamaba nuestro perro sintético %TAG%?",
+      "abstain": true
+    },
+    {
+      "id": "unknown-hotel-en",
+      "question": "Which hotel did we use on the synthetic trip %TAG%?",
+      "abstain": true
+    },
+    {
+      "id": "unknown-hotel-es",
+      "question": "¿En qué hotel nos quedamos en el viaje sintético %TAG%?",
+      "abstain": true
+    },
+    {
+      "id": "unknown-weather-en",
+      "question": "What was the weather on our synthetic anniversary %TAG%?",
+      "abstain": true
+    },
+    {
+      "id": "unknown-weather-es",
+      "question": "¿Qué clima hizo en el aniversario sintético %TAG%?",
+      "abstain": true
+    },
+    {
+      "id": "unknown-gift-en",
+      "question": "What gift did I give you on the synthetic anniversary %TAG%?",
+      "abstain": true
+    },
+    {
+      "id": "unknown-gift-es",
+      "question": "¿Qué regalo te di en el aniversario sintético %TAG%?",
+      "abstain": true
+    },
+    {
+      "id": "unknown-music-en",
+      "question": "Which song played during the synthetic dinner %TAG%?",
+      "abstain": true
+    },
+    {
+      "id": "unknown-music-es",
+      "question": "¿Qué canción sonó en la cena sintética %TAG%?",
+      "abstain": true
+    }
+  ]
+}

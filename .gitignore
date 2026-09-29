@@ -14,3 +14,4 @@ cdk.out.*/
 playwright-report/
 test-results/
 phase7-evidence/
+.verification-runs/

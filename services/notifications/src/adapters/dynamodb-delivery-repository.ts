@@ -13,6 +13,7 @@ import {
   type InboxItem,
 } from '@relationship-rag/contracts';
 import type { DeliveryRepository } from '../application/delivery.js';
+import { DomainError } from '@relationship-rag/domain';
 
 const deliveryKey = (coupleId: string, deliveryId: string) => ({
   PK: `COUPLE#${coupleId}`,
@@ -150,7 +151,11 @@ export class DynamoDbDeliveryRepository implements DeliveryRepository {
   public async listInbox(recipientUserId: string, cursor?: string, limit = 20) {
     const PK = inboxPartition(recipientUserId);
     const start = decode(cursor);
-    if (start !== undefined && start['PK'] !== PK) return { items: [] };
+    if (
+      start !== undefined &&
+      (start['PK'] !== PK || typeof start['SK'] !== 'string' || !start['SK'].startsWith('INBOX#'))
+    )
+      throw new DomainError('INVALID_CURSOR', 'Invalid inbox cursor.');
     const result = await this.client.send(
       new QueryCommand({
         TableName: this.tableName,
