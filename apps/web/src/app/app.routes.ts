@@ -112,13 +112,13 @@ export const routes: Routes = [
       {
         path: 'inbox',
         title: 'Buzón · Nuestra historia',
-        data: shell({ tab: 'inbox', legacy: true }),
+        data: shell({ tab: 'inbox' }),
         loadComponent: () => import('./inbox.component.js').then((m) => m.InboxComponent),
       },
       {
         path: 'inbox/:cardId',
         title: 'Tarjeta recibida · Nuestra historia',
-        data: shell({ tab: 'inbox', subpage: true, legacy: true }),
+        data: shell({ tab: 'inbox', subpage: true }),
         loadComponent: () =>
           import('./inbox-detail.component.js').then((m) => m.InboxDetailComponent),
       },

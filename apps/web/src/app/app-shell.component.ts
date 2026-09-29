@@ -32,8 +32,6 @@ export interface ShellRouteData {
   readonly bottomBar?: boolean;
   /** The screen manages its own scrolling (conversation). */
   readonly fill?: boolean;
-  /** A screen not yet moved to the new design, rendered on its original dark surface. */
-  readonly legacy?: boolean;
 }
 
 interface NavItem {
@@ -204,7 +202,6 @@ const DEFAULT_DATA: ShellRouteData = { tab: 'timeline' };
         >
           <div
             class="flex min-h-full flex-col"
-            [class.nh-legado]="data().legacy"
             [class.flex-1]="data().fill"
             [class.min-h-0]="data().fill"
           >

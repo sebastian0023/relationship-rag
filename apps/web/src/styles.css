@@ -4,13 +4,6 @@
 @import '@fontsource-variable/newsreader/opsz-italic.css';
 
 @theme {
-  --color-ink: #241c20;
-  --color-cream: #f7f0e8;
-  --color-paper: #efe3d6;
-  --color-rose: #e7a0a7;
-  --color-wine: #783e4b;
-  --font-display: Georgia, 'Times New Roman', serif;
-
   /* Nuestra historia design tokens. */
   --color-marfil: #fff9f2;
   --color-papel: #fffefb;
@@ -509,19 +502,6 @@ button {
 
 .skip-link:focus {
   transform: translateY(0);
-}
-
-/* Screens not yet moved to the new design keep their original dark surface. */
-.nh-legado {
-  flex: 1;
-  padding: 28px 24px;
-  background: var(--color-ink);
-  color: var(--color-cream);
-  color-scheme: dark;
-}
-
-.nh-legado :focus-visible {
-  outline-color: #f4b7bd;
 }
 
 @media (prefers-reduced-motion: reduce) {
