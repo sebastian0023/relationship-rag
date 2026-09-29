@@ -107,7 +107,7 @@ export class MemoryDetailComponent implements OnDestroy {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (file === undefined) return;
     try {
-      await this.api.upload(this.id, file);
+      await this.api.uploadFile(await this.api.createUpload(this.id, file), file, () => undefined);
       await this.load();
     } catch (e) {
       this.error.set(e instanceof Error ? e.message : 'Unable to upload this photo.');

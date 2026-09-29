@@ -68,6 +68,25 @@ export class AuthService {
     return refreshed?.access_token ?? null;
   }
 
+  /** Forces a silent refresh after the API rejected the current access token. */
+  public async refreshAccessToken(): Promise<string | null> {
+    return (await this.refresh())?.access_token ?? null;
+  }
+
+  /** The session ended on the server side: clear it and explain, keeping where the member was. */
+  public async handleSessionExpired(returnTo: string): Promise<void> {
+    await this.clearSession('anonymous');
+    await this.router.navigate(['/session-expired'], {
+      queryParams: { returnTo: safeReturnTo(returnTo) },
+    });
+  }
+
+  /** The account is signed in but has no active membership in this space. */
+  public async handleAccessDenied(): Promise<void> {
+    await this.clearSession('denied');
+    await this.router.navigateByUrl('/access-denied');
+  }
+
   public async signOut(): Promise<void> {
     const config = this.config;
     if (this.manager === undefined || config === null) {
