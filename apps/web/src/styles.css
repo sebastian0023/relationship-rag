@@ -391,16 +391,11 @@
 }
 
 :root {
-  color-scheme: dark;
-  font-family:
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
-  background: #241c20;
+  color-scheme: light;
+  font-family: var(--font-texto);
+  color: var(--color-ciruela);
+  background: var(--color-marfil);
+  -webkit-font-smoothing: antialiased;
 }
 
 * {
@@ -420,8 +415,12 @@ body {
 }
 
 :focus-visible {
-  outline: 3px solid #f4b7bd;
-  outline-offset: 3px;
+  outline: 3px solid var(--color-accion);
+  outline-offset: 2px;
+}
+
+::placeholder {
+  color: #8c7b86;
 }
 
 button:disabled,
@@ -431,20 +430,37 @@ select:disabled {
   cursor: not-allowed;
 }
 
+button {
+  cursor: pointer;
+}
+
 .skip-link {
   position: fixed;
   left: 1rem;
   top: 1rem;
-  z-index: 50;
+  z-index: 60;
   transform: translateY(-200%);
   border-radius: 9999px;
-  background: #f7f0e8;
-  color: #241c20;
+  background: var(--color-ciruela);
+  color: var(--color-papel);
   padding: 0.75rem 1rem;
 }
 
 .skip-link:focus {
   transform: translateY(0);
+}
+
+/* Screens not yet moved to the new design keep their original dark surface. */
+.nh-legado {
+  flex: 1;
+  padding: 28px 24px;
+  background: var(--color-ink);
+  color: var(--color-cream);
+  color-scheme: dark;
+}
+
+.nh-legado :focus-visible {
+  outline-color: #f4b7bd;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -455,21 +471,5 @@ select:disabled {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
-  }
-}
-
-.glow {
-  position: absolute;
-  width: 18rem;
-  height: 18rem;
-  border-radius: 9999px;
-  background: rgb(120 62 75 / 35%);
-  filter: blur(110px);
-}
-
-@media (min-width: 640px) {
-  .glow {
-    width: 32rem;
-    height: 32rem;
   }
 }

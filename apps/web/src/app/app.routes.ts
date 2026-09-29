@@ -1,38 +1,112 @@
 import type { Routes } from '@angular/router';
 import { authenticatedGuard } from './auth/auth.guard.js';
-import { AppShellComponent } from './app-shell.component.js';
-import { AuthCallbackComponent } from './auth-callback.component.js';
-import { LoginComponent } from './login.component.js';
-import { TimelineComponent } from './timeline.component.js';
-import { MemoryEditorComponent } from './memory-editor.component.js';
-import { MemoryDetailComponent } from './memory-detail.component.js';
-import { ChatComponent } from './chat.component.js';
-import { CardListComponent } from './card-list.component.js';
-import { CardEditorComponent } from './card-editor.component.js';
-import { InboxComponent } from './inbox.component.js';
-import { InboxDetailComponent } from './inbox-detail.component.js';
+import type { ShellRouteData } from './app-shell.component.js';
+
+const shell = (data: ShellRouteData): ShellRouteData => data;
 
 export const routes: Routes = [
   { path: '', pathMatch: 'full', redirectTo: 'login' },
-  { path: 'login', component: LoginComponent },
-  { path: 'auth/callback', component: AuthCallbackComponent },
+  {
+    path: 'login',
+    title: 'Nuestra historia',
+    loadComponent: () => import('./login.component.js').then((m) => m.LoginComponent),
+  },
+  {
+    path: 'auth/callback',
+    title: 'Nuestra historia',
+    loadComponent: () =>
+      import('./auth-callback.component.js').then((m) => m.AuthCallbackComponent),
+  },
+  {
+    path: 'session-expired',
+    title: 'Tu sesión terminó · Nuestra historia',
+    loadComponent: () =>
+      import('./session-expired.component.js').then((m) => m.SessionExpiredComponent),
+  },
+  {
+    path: 'access-denied',
+    title: 'Este espacio es privado · Nuestra historia',
+    loadComponent: () =>
+      import('./access-denied.component.js').then((m) => m.AccessDeniedComponent),
+  },
   {
     path: 'app',
-    component: AppShellComponent,
+    loadComponent: () => import('./app-shell.component.js').then((m) => m.AppShellComponent),
     canActivate: [authenticatedGuard],
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'timeline' },
-      { path: 'timeline', component: TimelineComponent },
-      { path: 'timeline/new', component: MemoryEditorComponent },
-      { path: 'timeline/:memoryId', component: MemoryDetailComponent },
-      { path: 'timeline/:memoryId/edit', component: MemoryEditorComponent },
-      { path: 'chat', component: ChatComponent },
-      { path: 'chat/:conversationId', component: ChatComponent },
-      { path: 'cards', component: CardListComponent },
-      { path: 'cards/new', component: CardEditorComponent },
-      { path: 'cards/:cardId', component: CardEditorComponent },
-      { path: 'inbox', component: InboxComponent },
-      { path: 'inbox/:cardId', component: InboxDetailComponent },
+      {
+        path: 'timeline',
+        title: 'Recuerdos · Nuestra historia',
+        data: shell({ tab: 'timeline', legacy: true }),
+        loadComponent: () => import('./timeline.component.js').then((m) => m.TimelineComponent),
+      },
+      {
+        path: 'timeline/new',
+        title: 'Nuevo recuerdo · Nuestra historia',
+        data: shell({ tab: 'timeline', subpage: true, legacy: true }),
+        loadComponent: () =>
+          import('./memory-editor.component.js').then((m) => m.MemoryEditorComponent),
+      },
+      {
+        path: 'timeline/:memoryId',
+        title: 'Recuerdo · Nuestra historia',
+        data: shell({ tab: 'timeline', subpage: true, legacy: true }),
+        loadComponent: () =>
+          import('./memory-detail.component.js').then((m) => m.MemoryDetailComponent),
+      },
+      {
+        path: 'timeline/:memoryId/edit',
+        title: 'Editar recuerdo · Nuestra historia',
+        data: shell({ tab: 'timeline', subpage: true, legacy: true }),
+        loadComponent: () =>
+          import('./memory-editor.component.js').then((m) => m.MemoryEditorComponent),
+      },
+      {
+        path: 'chat',
+        title: 'Conversar · Nuestra historia',
+        data: shell({ tab: 'chat', legacy: true }),
+        loadComponent: () => import('./chat.component.js').then((m) => m.ChatComponent),
+      },
+      {
+        path: 'chat/:conversationId',
+        title: 'Conversar · Nuestra historia',
+        data: shell({ tab: 'chat', legacy: true }),
+        loadComponent: () => import('./chat.component.js').then((m) => m.ChatComponent),
+      },
+      {
+        path: 'cards',
+        title: 'Tarjetas · Nuestra historia',
+        data: shell({ tab: 'cards', legacy: true }),
+        loadComponent: () => import('./card-list.component.js').then((m) => m.CardListComponent),
+      },
+      {
+        path: 'cards/new',
+        title: 'Nueva tarjeta · Nuestra historia',
+        data: shell({ tab: 'cards', subpage: true, legacy: true }),
+        loadComponent: () =>
+          import('./card-editor.component.js').then((m) => m.CardEditorComponent),
+      },
+      {
+        path: 'cards/:cardId',
+        title: 'Tarjeta · Nuestra historia',
+        data: shell({ tab: 'cards', subpage: true, legacy: true }),
+        loadComponent: () =>
+          import('./card-editor.component.js').then((m) => m.CardEditorComponent),
+      },
+      {
+        path: 'inbox',
+        title: 'Buzón · Nuestra historia',
+        data: shell({ tab: 'inbox', legacy: true }),
+        loadComponent: () => import('./inbox.component.js').then((m) => m.InboxComponent),
+      },
+      {
+        path: 'inbox/:cardId',
+        title: 'Tarjeta recibida · Nuestra historia',
+        data: shell({ tab: 'inbox', subpage: true, legacy: true }),
+        loadComponent: () =>
+          import('./inbox-detail.component.js').then((m) => m.InboxDetailComponent),
+      },
     ],
   },
   { path: '**', redirectTo: 'app' },

@@ -40,6 +40,6 @@ for (const viewport of [
     expect(overflowing).toEqual([]);
 
     await page.keyboard.press('Tab');
-    await expect(page.getByRole('button', { name: 'Sign in with your invitation' })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Entrar a nuestro espacio' })).toBeFocused();
   });
 }

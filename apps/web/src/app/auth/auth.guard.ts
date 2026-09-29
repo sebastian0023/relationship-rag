@@ -7,6 +7,7 @@ export const authenticatedGuard: CanActivateFn = async (_route, routerState) => 
   const router = inject(Router);
   await auth.restore();
   if (auth.state() === 'authenticated') return true;
+  if (auth.state() === 'denied') return router.createUrlTree(['/access-denied']);
   if (auth.state() === 'unavailable') {
     return router.createUrlTree(['/login'], { queryParams: { returnTo: routerState.url } });
   }

@@ -44,9 +44,11 @@ test('sign out uses the Cognito logout parameters and returns to login', async (
     );
   });
   await page.goto('/app/timeline');
-  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.getByRole('button', { name: 'Cerrar sesión' }).click();
 
   await expect(page).toHaveURL(/\/login$/);
+  // The last match is the visible toast; the first is the screen-reader live region.
+  await expect(page.getByText('Cerraste sesión. Hasta pronto.').last()).toBeVisible();
   expect(logoutUrl?.searchParams.get('client_id')).toBe('e2e-client');
   expect(logoutUrl?.searchParams.get('logout_uri')).toBe('http://127.0.0.1:4200/');
   expect(logoutUrl?.searchParams.has('post_logout_redirect_uri')).toBe(false);

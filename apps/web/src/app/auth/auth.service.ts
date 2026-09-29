@@ -7,6 +7,9 @@ import { RUNTIME_CONFIG } from './runtime-config.js';
 export type AuthenticationState =
   'checking' | 'anonymous' | 'authenticated' | 'denied' | 'unavailable';
 
+/** Non-sensitive marker that lets the welcome page say goodbye after the hosted logout. */
+export const SIGNED_OUT_FLAG = 'nh.signedOut';
+
 const safeReturnTo = (value: unknown): string =>
   typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') ? value : '/app';
 
@@ -19,6 +22,8 @@ export class AuthService {
 
   public readonly state = signal<AuthenticationState>('checking');
   public readonly profile = signal<MemberProfile | null>(null);
+  /** The signed-in member's own email from the ID token, shown only to them. */
+  public readonly email = signal<string | null>(null);
 
   public async restore(): Promise<void> {
     if (this.manager === undefined) {
@@ -90,10 +95,12 @@ export class AuthService {
   public async signOut(): Promise<void> {
     const config = this.config;
     if (this.manager === undefined || config === null) {
+      sessionStorage.setItem(SIGNED_OUT_FLAG, '1');
       await this.router.navigateByUrl('/');
       return;
     }
     await this.clearSession('anonymous');
+    sessionStorage.setItem(SIGNED_OUT_FLAG, '1');
     await this.manager.signoutRedirect({
       extraQueryParams: {
         client_id: config.clientId,
@@ -138,6 +145,7 @@ export class AuthService {
       return;
     }
     this.profile.set(memberProfileSchema.parse(await response.json()));
+    this.email.set(typeof user.profile.email === 'string' ? user.profile.email : null);
     this.state.set('authenticated');
   }
 
@@ -154,6 +162,7 @@ export class AuthService {
 
   private async clearSession(state: AuthenticationState): Promise<void> {
     this.profile.set(null);
+    this.email.set(null);
     await this.manager?.removeUser();
     this.state.set(state);
   }
