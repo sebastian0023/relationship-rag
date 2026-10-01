@@ -77,7 +77,7 @@ jobs:
         run: |
           set -o pipefail
           npm run phase7:alarm-smoke -- --stage test --confirm | tee phase7-evidence/alarm-smoke.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: phase7-test-evidence
